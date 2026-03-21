@@ -1,6 +1,7 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const path = require("path");
 require("dotenv").config();
 
 const app = express();
@@ -8,6 +9,8 @@ const app = express();
 // Middleware (Xử lý dữ liệu trung gian)
 app.use(cors()); // Cho phép Frontend gọi API
 app.use(express.json()); // Cho phép Backend đọc được dữ liệu JSON gửi lên
+app.use("/uploads", express.static(path.join(__dirname, "uploads"))); // Cho phép truy cập file tĩnh trong thư mục uploads
+app.use("/api/sheets", require("./routes/sheetRoutes")); // Đăng ký route cho nhạc phổ
 
 // Kết nối MongoDB bằng Mongoose
 mongoose
@@ -17,11 +20,7 @@ mongoose
 
 const authRoutes = require("./routes/authRoutes");
 app.use("/api/auth", authRoutes);
-
-// Route test cơ bản để kiểm tra server có sống không
-app.get("/", (req, res) => {
-  res.send("Chào mừng đến với API của Mạng xã hội JamSheet!");
-});
+app.use("/api/users", require("./routes/userRoutes"));
 
 // Khởi động Server
 const PORT = process.env.PORT || 5000;
