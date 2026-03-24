@@ -21,6 +21,8 @@ mongoose
 const authRoutes = require("./routes/authRoutes");
 app.use("/api/auth", authRoutes);
 app.use("/api/users", require("./routes/userRoutes"));
+app.use("/api/sheets", require("./routes/sheetRoutes"));
+app.use("/api/jams", require("./routes/jamRoutes"));
 
 // Khởi động Server
 const PORT = process.env.PORT || 5000;
