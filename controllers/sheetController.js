@@ -1,4 +1,5 @@
 const SheetMusic = require("../models/SheetMusic");
+const JamProject = require("../models/JamProject");
 const cloudinary = require("../config/cloudinary");
 const { Readable } = require("stream");
 
@@ -10,7 +11,8 @@ exports.createSheet = async (req, res) => {
         .json({ message: "Vui lòng đính kèm file nhạc phổ!" });
     }
 
-    const { title, composer, instrument_tags, tempo, genre } = req.body;
+    const { title, composer, instrument_tags, tempo, genre, time_signature } =
+      req.body;
 
     // Hàm bọc Promise để chờ quá trình upload Cloudinary hoàn tất
     const uploadToCloudinary = (buffer) => {
@@ -49,6 +51,7 @@ exports.createSheet = async (req, res) => {
       file_url: cloudResult.secure_url, // Lấy đường link HTTPS từ Cloudinary
       instrument_tags: tagsArray,
       tempo: Number(tempo) || 0,
+      time_signature: time_signature || "4/4",
       genre: genre || "Other",
     });
 
@@ -95,7 +98,8 @@ exports.getExploreSheets = async (req, res) => {
 exports.updateSheet = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, composer, instrument_tags, tempo, genre } = req.body;
+    const { title, composer, instrument_tags, tempo, genre, time_signature } =
+      req.body;
 
     let tagsArray = [];
     if (Array.isArray(instrument_tags)) {
@@ -109,7 +113,7 @@ exports.updateSheet = async (req, res) => {
 
     const updatedSheet = await SheetMusic.findOneAndUpdate(
       { _id: id, uploader_id: req.user.userId },
-      { title, composer, instrument_tags: tagsArray, tempo, genre },
+      { title, composer, instrument_tags: tagsArray, tempo, genre, time_signature },
       { new: true },
     );
 
@@ -118,6 +122,18 @@ exports.updateSheet = async (req, res) => {
         message: "Không tìm thấy nhạc phổ hoặc bạn không có quyền chỉnh sửa!",
       });
     }
+
+    await JamProject.updateMany(
+      { sheet_music_id: id },
+      {
+        $set: {
+          title: updatedSheet.title,
+          tempo: updatedSheet.tempo,
+          time_signature: updatedSheet.time_signature,
+          required_instruments: updatedSheet.instrument_tags,
+        },
+      },
+    );
 
     res
       .status(200)
