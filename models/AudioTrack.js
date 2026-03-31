@@ -30,6 +30,12 @@ const audioTrackSchema = new mongoose.Schema(
     sync_offset_ms: { type: Number, default: 0 }, // Điểm bắt đầu phát (tính bằng mili-giây)
     duration: { type: Number, required: true }, // Độ dài của file audio (tính bằng giây)
 
+    status: {
+      type: String,
+      enum: ["draft", "published"],
+      default: "draft",
+    },
+
     likes_count: { type: Number, default: 0 },
     liked_by: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   },
