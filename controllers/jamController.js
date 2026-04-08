@@ -133,6 +133,25 @@ exports.getJamRoomById = async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy phòng Jam này!" });
     }
 
+    // Lấy tất cả bản thu âm của phòng này
+    const publishedTracks = await AudioTrack.find({
+      project_id: projectId,
+      status: "published",
+    }).select("_id name raw_audio_url instrument");
+
+    // Gom nhóm bản thu theo nhạc cụ
+    const recordsByInstrument = {};
+    publishedTracks.forEach((t) => {
+      if (!recordsByInstrument[t.instrument]) {
+        recordsByInstrument[t.instrument] = [];
+      }
+      recordsByInstrument[t.instrument].push({
+        id: t._id.toString(),
+        name: t.name,
+        audioUrl: t.raw_audio_url,
+      });
+    });
+
     let frontendTracks = [];
     const colorPalette = [
       "#3b82f6",
@@ -147,12 +166,14 @@ exports.getJamRoomById = async (req, res) => {
       frontendTracks = project.tracks_config.map((tc, index) => ({
         id: tc._id || `track_${index}`,
         instrument: tc.instrument,
-        user: "Chưa rõ", // Sau này sẽ populate tên User thu âm vào đây
+        user: "Thành viên",
         avatar: "",
         waveColor: colorPalette[index % colorPalette.length],
         volume: tc.volume || 80,
-        activeRecordId: tc.active_record_id || null,
-        records: [], // Chưa có file mp3, để trống
+        activeRecordId: tc.active_record_id
+          ? tc.active_record_id.toString()
+          : null,
+        records: recordsByInstrument[tc.instrument] || [],
       }));
     } else if (
       project.required_instruments &&
@@ -167,7 +188,7 @@ exports.getJamRoomById = async (req, res) => {
         waveColor: colorPalette[index % colorPalette.length],
         volume: 80,
         activeRecordId: null,
-        records: [],
+        records: recordsByInstrument[inst] || [],
       }));
     }
 
@@ -230,6 +251,24 @@ exports.uploadAudioTrack = async (req, res) => {
 
     await newTrack.save();
 
+    if (newTrack.status === "published") {
+      const project = await JamProject.findById(projectId);
+      const trackIndex = project.tracks_config.findIndex(
+        (t) => t.instrument === instrument,
+      );
+
+      if (trackIndex !== -1) {
+        project.tracks_config[trackIndex].active_record_id = newTrack._id;
+      } else {
+        project.tracks_config.push({
+          instrument: instrument,
+          volumn: 80,
+          active_record_id: newTrack._id,
+        });
+      }
+      await project.save();
+    }
+
     res.status(201).json({
       message: "Tải lên bản thu âm thành công!",
       track: newTrack,
@@ -242,13 +281,139 @@ exports.uploadAudioTrack = async (req, res) => {
 
 exports.getMyTracks = async (req, res) => {
   try {
-    const tracks = await AudioTrack.find({ user_id: req.user.userId }).populate(
-      "project_id",
-      "title").sort({ createdAt: -1 });
+    const tracks = await AudioTrack.find({ user_id: req.user.userId })
+      .populate("project_id", "title")
+      .sort({ createdAt: -1 });
 
     res.status(200).json(tracks);
   } catch (error) {
     console.error("Lỗi khi lấy danh sách bản thu âm của tôi:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+exports.getTrackById = async (req, res) => {
+  try {
+    const trackId = req.params.trackId;
+    const track = await AudioTrack.findById(trackId).populate("project_id");
+
+    if (!track) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy bản thu âm này!" });
+    }
+
+    res.status(200).json(track);
+  } catch (error) {
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+exports.updateAudioTrack = async (req, res) => {
+  try {
+    const { trackId } = req.params;
+    const { status, duration, name, instrument } = req.body;
+
+    const track = await AudioTrack.findById(trackId);
+    if (!track) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy bản thu âm này!" });
+    }
+
+    if (req.file) {
+      const uploadToCloudinary = (buffer) => {
+        return new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              folder: "jamroom_audio",
+              resource_type: "video",
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            },
+          );
+
+          require("stream").Readable.from(buffer).pipe(uploadStream);
+        });
+      };
+
+      const cloudResult = await uploadToCloudinary(req.file.buffer);
+      track.raw_audio_url = cloudResult.secure_url;
+    }
+
+    if (status) track.status = status;
+    if (duration) track.duration = Number(duration);
+    if (name) track.name = name;
+    if (instrument) track.instrument = instrument;
+
+    await track.save();
+
+    if (track.status === "published") {
+      const project = await JamProject.findById(track.project_id);
+      
+      if (project) {
+        const trackIndex = project.tracks_config.findIndex(t => t.instrument === track.instrument);
+
+      if (trackIndex !== -1) {
+        project.tracks_config[trackIndex].active_record_id = track._id;
+      } else {
+        project.tracks_config.push({
+          instrument: instrument,
+          volumn: 80,
+          active_record_id: track._id,
+        });
+      }
+      await project.save();
+      }
+    }
+
+    res.status(200).json({
+      message: "Cập nhật bản thu âm thành công!",
+      track,
+    });
+  } catch (error) {
+    console.error("Lỗi khi cập nhật bản thu âm:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+exports.getLobbyJams = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // 1. LẤY CÁC PHÒNG DO USER LÀM CHỦ
+    const myRooms = await JamProject.find({ owner_id: userId })
+      .populate("owner_id", "name avatar")
+      .sort({ createdAt: -1 });
+
+    // 2. LẤY CÁC PHÒNG ĐÃ CỘNG TÁC (Có nộp bản thu nhưng không phải chủ phòng)
+    // Bước a: Tìm tất cả các bản thu của user này
+    const userTracks = await AudioTrack.find({ user_id: userId }).select(
+      "project_id",
+    );
+
+    // Bước b: Lấy danh sách ID phòng từ các bản thu này
+    const projectIds = [
+      ...new Set(userTracks.map((t) => t.project_id.toString())),
+    ];
+
+    // Bước c: Lấy thông tin các phòng này, nhưng chỉ những phòng mà user không phải chủ
+    const collabRooms = await JamProject.find({
+      _id: { $in: projectIds },
+      owner_id: { $ne: userId },
+    })
+      .populate("owner_id", "name avatar")
+      .sort({ createdAt: -1 });
+
+    // 3. Gộp kết quả và trả về
+    res.status(200).json({
+      myRooms,
+      collabRooms,
+    });
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách phòng Jam:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };

@@ -9,6 +9,12 @@ router.get("/check-duplicate", authMiddleware, jamController.checkDuplicateJam);
 
 router.get("/my-tracks", authMiddleware, jamController.getMyTracks);
 
+router.get("/lobby", authMiddleware, jamController.getLobbyJams);
+
+router.get("/tracks/:trackId", authMiddleware, jamController.getTrackById);
+
+router.put("/tracks/:trackId", authMiddleware, upload.single("audio"), jamController.updateAudioTrack);
+
 router.get("/:id", authMiddleware, jamController.getJamRoomById);
 
 router.post("/", authMiddleware, jamController.createJamRoom);
