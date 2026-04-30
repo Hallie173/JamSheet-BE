@@ -22,8 +22,8 @@ const audioTrackSchema = new mongoose.Schema(
 
     ai_status: {
       type: String,
-      enum: ["pending", "processing", "completed", "failed"],
-      default: "pending",
+      enum: ["none", "pending", "processing", "completed", "failed"],
+      default: "none",
     },
 
     // BỔ SUNG THÔNG SỐ TIMELINE (Dùng để vẽ giao diện sóng âm)

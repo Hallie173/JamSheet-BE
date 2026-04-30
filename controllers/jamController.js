@@ -130,7 +130,7 @@ exports.getJamRoomById = async (req, res) => {
     const publishedTracks = await AudioTrack.find({
       project_id: projectId,
       status: "published",
-    }).select("_id name raw_audio_url instrument sync_offset_ms"); // Thêm sync_offset_ms
+    }).select("_id name raw_audio_url instrument sync_offset_ms liked_by");
 
     const recordsByInstrument = {};
     publishedTracks.forEach((t) => {
@@ -141,7 +141,8 @@ exports.getJamRoomById = async (req, res) => {
         id: t._id.toString(),
         name: t.name,
         audioUrl: t.raw_audio_url,
-        syncOffset: t.sync_offset_ms || 0, // Truyền offset xuống Frontend
+        syncOffset: t.sync_offset_ms || 0,
+        liked_by: t.liked_by ? t.liked_by.map((id) => id.toString()) : [],
       });
     });
 
@@ -194,6 +195,40 @@ exports.getJamRoomById = async (req, res) => {
     res.status(200).json(roomData);
   } catch (error) {
     console.error("Lỗi lấy thông tin phòng Jam:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+// [PUT] THẢ TIM BẢN THU
+exports.toggleLikeTrack = async (req, res) => {
+  try {
+    const { trackId } = req.params;
+    const userId = req.user.userId;
+    const track = await AudioTrack.findById(trackId);
+    if (!track) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy bản thu!" });
+    };
+
+    const likedIndex = track.liked_by.indexOf(userId);
+
+    if (likedIndex === -1) {
+      track.liked_by.push(userId);
+    } else {
+      track.liked_by.splice(likedIndex, 1);
+    }
+
+    track.likes_count = track.liked_by.length;
+    await track.save();
+
+    res.status(200).json({
+      message: likedIndex === -1 ? "Đã thích bản thu!" : "Đã bỏ thích bản thu!",
+      likes_count: track.likes_count,
+      liked_by: track.liked_by,
+    });
+  } catch (error) {
+    console.error("Lỗi khi thả tim bản thu:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };
@@ -398,6 +433,39 @@ exports.getLobbyJams = async (req, res) => {
     res.status(200).json({ myRooms, collabRooms });
   } catch (error) {
     console.error("Lỗi khi lấy danh sách phòng Jam:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+exports.findJamBySheetId = async (req, res) => {
+  try {
+    const { sheetId } = req.params;
+    
+    // Tìm phòng Jam mới nhất (sắp xếp theo createdAt giảm dần) đang xài sheet_id này
+    const jamRoom = await JamProject.findOne({ sheet_music_id: sheetId })
+                                    .sort({ createdAt: -1 });
+
+    if (jamRoom) {
+      res.status(200).json({ roomId: jamRoom._id });
+    } else {
+      res.status(200).json({ roomId: null });
+    }
+  } catch (error) {
+    console.error("Lỗi khi tìm phòng Jam theo Sheet:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+exports.getTopTracks = async (req, res) => {
+  try {
+    const topTracks = await AudioTrack.find({ status: "published" })
+      .populate("project_id", "title")
+      .sort({ likes_count: -1, createdAt: -1 })
+      .limit(8);
+
+    res.status(200).json(topTracks);
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách bản thu âm nổi bật:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };
