@@ -16,6 +16,7 @@ const sheetMusicSchema = new mongoose.Schema(
     genre: { type: String, default: "Other" },
     liked_by: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     contributors_count: { type: Number, default: 0 },
+    is_frozen: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

@@ -39,7 +39,7 @@ const jamProjectSchema = new mongoose.Schema(
 
     // Danh sách kệ bắt buộc phải có (Dùng để tính số Slot còn thiếu ở Trang chủ)
     required_instruments: [{ type: String, required: true }],
-    status: { type: String, enum: ["open", "completed"], default: "open" },
+    status: { type: String, enum: ["active", "archived"], default: "active" },
   },
   { timestamps: true },
 );

@@ -2,6 +2,7 @@ const SheetMusic = require("../models/SheetMusic");
 const JamProject = require("../models/JamProject");
 const cloudinary = require("../config/cloudinary");
 const { Readable } = require("stream");
+const AudioTrack = require("../models/AudioTrack");
 
 exports.createSheet = async (req, res) => {
   try {
@@ -71,7 +72,7 @@ exports.createSheet = async (req, res) => {
 
 exports.getMySheets = async (req, res) => {
   try {
-    const sheets = await SheetMusic.find({ uploader_id: req.user.userId }).sort(
+    const sheets = await SheetMusic.find({ uploader_id: req.user.userId, is_frozen: false }).sort(
       { createdAt: -1 },
     );
     res.status(200).json(sheets);
@@ -85,7 +86,7 @@ exports.getMySheets = async (req, res) => {
 
 exports.getExploreSheets = async (req, res) => {
   try {
-    const sheets = await SheetMusic.find().sort({ likes_count: -1 }).limit(20);
+    const sheets = await SheetMusic.find({ is_frozen: false }).sort({ likes_count: -1 }).limit(20);
     res.status(200).json(sheets);
   } catch (error) {
     res.status(500).json({
@@ -148,21 +149,39 @@ exports.updateSheet = async (req, res) => {
 
 exports.deleteSheet = async (req, res) => {
   try {
-    const { id } = req.params;
+    const sheetId = req.params.id;
+    const userId = req.user.userId;
 
-    const deletedSheet = await SheetMusic.findOneAndDelete({
-      _id: id,
-      uploader_id: req.user.userId,
-    });
-
-    if (!deletedSheet) {
-      return res.status(404).json({
-        message: "Không tìm thấy nhạc phổ hoặc bạn không có quyền xóa!",
-      });
+    const sheet = await SheetMusic.findById(sheetId);
+    if (!sheet) {
+      return res.status(404).json({ message: "Nhạc phổ không tồn tại!" });
+    }
+    if (sheet.uploader_id.toString() !== userId) {
+      return res.status(403).json({ message: "Bạn không có quyền xóa nhạc phổ này!" });
     }
 
-    res.status(200).json({ message: "Xóa nhạc phổ thành công!" });
+    const associatedRooms = await JamProject.find({ sheet_music_id: sheetId });
+    const roomIds = associatedRooms.map((room) => room._id);
+
+    const trackCount = await AudioTrack.countDocuments({ project_id: { $in: roomIds } });
+
+    if (trackCount === 0) {
+      // 1: Xóa dữ liệu
+      await JamProject.deleteMany({ sheet_music_id: sheetId });
+      await SheetMusic.findByIdAndDelete(sheetId);
+      res.status(200).json({ message: "Nhạc phổ và các phòng liên quan đã được xóa!", action: "hard_delete" });
+    } else {
+      // 2: Đánh dấu "đóng băng" (Frozen)
+       await SheetMusic.findByIdAndUpdate(sheetId, { is_frozen: true });
+       await JamProject.updateMany({ sheet_music_id: sheetId }, { status: "archived" });
+
+       return res.status(200).json({
+          message: "Nhạc phổ đã được đánh dấu đóng băng vì có phòng đang sử dụng. Các phòng liên quan đã được lưu trữ!",
+          action: "freeze",
+       });
+    }
   } catch (error) {
+    console.error("Lỗi khi xóa nhạc phổ:", error);
     res.status(500).json({
       message: "Lỗi server khi xóa nhạc phổ",
       error: error.message,

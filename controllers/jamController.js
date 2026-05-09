@@ -3,6 +3,7 @@ const AudioTrack = require("../models/AudioTrack");
 const cloudinary = require("../config/cloudinary");
 const { Readable } = require("stream");
 const mongoose = require("mongoose");
+const { partialDeepStrictEqual } = require("assert");
 
 exports.checkDuplicateJam = async (req, res) => {
   try {
@@ -99,7 +100,7 @@ exports.createJamRoom = async (req, res) => {
       owner_id: req.user.userId,
       sheet_music_id: sheet_music_id,
       tracks_config: [],
-      status: "open",
+      status: "active",
     });
 
     await newProject.save();
@@ -189,6 +190,7 @@ exports.getJamRoomById = async (req, res) => {
       title: project.title,
       tempo: project.tempo,
       timeSignature: project.time_signature,
+      status: project.status,
       tracks: frontendTracks,
     };
 
@@ -466,6 +468,79 @@ exports.getTopTracks = async (req, res) => {
     res.status(200).json(topTracks);
   } catch (error) {
     console.error("Lỗi khi lấy danh sách bản thu âm nổi bật:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+exports.getRecentDrafts = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const drafts = await AudioTrack.find({ user_id: userId, status: "draft" })
+      .populate("project_id", "title")
+      .sort({ createdAt: -1 })
+      .limit(3);
+
+    const validDrafts = drafts.filter(draft => draft.project_id != null);
+
+    const formattedDrafts = validDrafts.map((draft) => ({
+      id: draft.project_id._id,
+      draftId: draft._id,
+      title: draft.project_id.title || "Phòng Jam có thể đã bị xóa",
+      role: draft.instrument,
+      lastActive: draft.updatedAt,
+    }));
+
+    res.status(200).json(formattedDrafts);
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách bản nháp gần đây:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+exports.getTrendingJams = async (req, res) => {
+  try {
+    const allJams = await JamProject.find().populate("owner_id", "name");
+    
+    const trendingJams = [];
+
+    for (const jam of allJams) {
+      const requiredCount = jam.required_instruments.length;
+      if (requiredCount === 0) continue;
+
+      const publishedCount = await AudioTrack.find({
+        project_id: jam._id,
+        status: "published",
+      }).distinct("instrument");
+
+      const filledCount = publishedCount.length;
+
+      if (filledCount >= requiredCount) {
+        const allTracksInRoom = await AudioTrack.find({
+          project_id: jam._id,
+          status: "published",
+        });
+        const totalLikes = allTracksInRoom.reduce(
+          (sum, t) => sum + (t.likes_count || 0),
+          0,
+        );
+
+        trendingJams.push({
+          id: jam._id,
+          title: jam.title,
+          creator: jam.owner_id ? jam.owner_id.name : "Unknown",
+          likes: totalLikes,
+          participants: filledCount,
+          tags: ["Hoàn thành"],
+        });
+      }
+    }
+
+    trendingJams.sort((a, b) => b.likes - a.likes);
+    const topTrending = trendingJams.slice(0, 6);
+    res.status(200).json(topTrending);
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách phòng Jam thịnh hành:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };

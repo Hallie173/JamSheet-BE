@@ -13,6 +13,10 @@ router.get("/lobby", authMiddleware, jamController.getLobbyJams);
 
 router.get("/top-tracks", jamController.getTopTracks);
 
+router.get("/recent-drafts", authMiddleware, jamController.getRecentDrafts);
+
+router.get("/trending", jamController.getTrendingJams);
+
 router.get("/find-by-sheet/:sheetId", authMiddleware, jamController.findJamBySheetId);
 
 router.get("/tracks/:trackId", authMiddleware, jamController.getTrackById);
