@@ -16,5 +16,6 @@ router.post(
 router.put("/:id", authMiddleware, sheetController.updateSheet);
 router.delete("/:id", authMiddleware, sheetController.deleteSheet);
 router.post("/:id/like", authMiddleware, sheetController.toggleLike);
+router.get("/search", sheetController.searchSheets);
 
 module.exports = router;

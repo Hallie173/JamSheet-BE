@@ -30,7 +30,7 @@ router.post("/", authMiddleware, jamController.createJamRoom);
 router.put("/:id/mix-config", authMiddleware, jamController.saveMixConfig);
 
 router.post("/:id/tracks", authMiddleware, upload.single("audio"), jamController.uploadAudioTrack);
-
+router.delete('/tracks/:trackId', authMiddleware, jamController.deleteTrack);
 router.put('/tracks/:trackId/like', authMiddleware, jamController.toggleLikeTrack);
 
 module.exports = router;

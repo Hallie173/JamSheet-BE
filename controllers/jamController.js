@@ -1,5 +1,6 @@
 const JamProject = require("../models/JamProject");
 const AudioTrack = require("../models/AudioTrack");
+const Notification = require("../models/Notification");
 const cloudinary = require("../config/cloudinary");
 const { Readable } = require("stream");
 const mongoose = require("mongoose");
@@ -123,7 +124,7 @@ exports.getJamRoomById = async (req, res) => {
       return res.status(400).json({ message: "ID phòng Jam không hợp lệ!" });
     }
 
-    const project = await JamProject.findById(projectId);
+    const project = await JamProject.findById(projectId).populate("sheet_music_id", "file_url");
     if (!project) {
       return res.status(404).json({ message: "Không tìm thấy phòng Jam này!" });
     }
@@ -191,6 +192,7 @@ exports.getJamRoomById = async (req, res) => {
       tempo: project.tempo,
       timeSignature: project.time_signature,
       status: project.status,
+      sheetUrl: project.sheet_music_id ? project.sheet_music_id.file_url : null,
       tracks: frontendTracks,
     };
 
@@ -224,6 +226,33 @@ exports.toggleLikeTrack = async (req, res) => {
     track.likes_count = track.liked_by.length;
     await track.save();
 
+    // BẮN THÔNG BÁO (Nếu là Thích và người thích khác chủ bản thu)
+    if (likedIndex === -1 && track.user_id.toString() !== userId) {
+      const Notification = require("../models/Notification");
+      
+      // LOGIC GỘP (UPSERT): Tìm xem có thông báo chưa đọc của track này không
+      const existingNotif = await Notification.findOne({
+        recipient_id: track.user_id,
+        type: "track_likes",
+        target_id: track._id,
+        is_read: false
+      });
+
+      if (existingNotif) {
+        existingNotif.count += 1; // Cộng dồn số like
+        await existingNotif.save();
+      } else {
+        await Notification.create({
+          recipient_id: track.user_id,
+          type: "track_likes",
+          target_id: track._id,
+          target_name: track.name,
+          target_link: `/jam-room?id=${track.project_id}`,
+          count: 1
+        });
+      }
+    }
+
     res.status(200).json({
       message: likedIndex === -1 ? "Đã thích bản thu!" : "Đã bỏ thích bản thu!",
       likes_count: track.likes_count,
@@ -239,14 +268,10 @@ exports.toggleLikeTrack = async (req, res) => {
 exports.uploadAudioTrack = async (req, res) => {
   try {
     const projectId = req.params.id;
-    // ĐÃ SỬA: Lấy thêm sync_offset_ms và use_ai_clean từ form data
-    const { instrument, name, status, duration, sync_offset_ms, use_ai_clean } =
-      req.body;
+    const { instrument, name, status, duration, sync_offset_ms, use_ai_clean } = req.body;
 
     if (!req.file) {
-      return res
-        .status(400)
-        .json({ message: "Vui lòng chọn file audio để upload!" });
+      return res.status(400).json({ message: "Vui lòng chọn file audio để upload!" });
     }
 
     const uploadToCloudinary = (buffer) => {
@@ -256,8 +281,9 @@ exports.uploadAudioTrack = async (req, res) => {
           (error, result) => {
             if (error) reject(error);
             else resolve(result);
-          },
+          }
         );
+        const { Readable } = require("stream");
         Readable.from(buffer).pipe(uploadStream);
       });
     };
@@ -272,7 +298,6 @@ exports.uploadAudioTrack = async (req, res) => {
       raw_audio_url: cloudResult.secure_url,
       duration: Number(duration) || 0,
       status: status || "draft",
-      // ĐÃ SỬA: Lưu thông số vào DB
       sync_offset_ms: Number(sync_offset_ms) || 0,
       ai_status: use_ai_clean === "true" ? "pending" : "none",
     });
@@ -281,21 +306,67 @@ exports.uploadAudioTrack = async (req, res) => {
 
     if (newTrack.status === "published") {
       const project = await JamProject.findById(projectId);
-      const trackIndex = project.tracks_config.findIndex(
-        (t) => t.instrument === instrument,
-      );
+      if (project) {
+        const trackIndex = project.tracks_config.findIndex(
+          (t) => t.instrument === instrument,
+        );
 
-      if (trackIndex !== -1) {
-        project.tracks_config[trackIndex].active_record_id = newTrack._id;
-      } else {
-        // ĐÃ SỬA: Lỗi chính tả 'volumn' -> 'volume'
-        project.tracks_config.push({
-          instrument: instrument,
-          volume: 80,
-          active_record_id: newTrack._id,
-        });
+        if (trackIndex !== -1) {
+          project.tracks_config[trackIndex].active_record_id = newTrack._id;
+        } else {
+          project.tracks_config.push({
+            instrument: instrument,
+            volume: 80,
+            active_record_id: newTrack._id,
+          });
+        }
+        await project.save();
+
+        // ---- LOGIC BẮN THÔNG BÁO PHÒNG JAM (Đã bọc thép an toàn) ----
+        try {
+          const Notification = require("../models/Notification");
+          const currentUserIdStr = req.user.userId.toString();
+          
+          // Kiểm tra an toàn xem phòng có owner_id không
+          const ownerIdStr = project.owner_id ? project.owner_id.toString() : "";
+
+          // 1. Gửi cho Chủ Phòng (nếu người up không phải chủ phòng)
+          if (ownerIdStr && ownerIdStr !== currentUserIdStr) {
+            await Notification.create({
+              recipient_id: project.owner_id,
+              type: "room_new_track_owner",
+              target_id: project._id,
+              target_name: project.title,
+              target_link: `/jam-room?id=${project._id}`
+            });
+          }
+
+          // 2. Gửi cho các Nhạc công khác đang tham gia phòng
+          const allTracks = await AudioTrack.find({ project_id: projectId, status: "published" }).distinct("user_id");
+          
+          const participants = allTracks.filter(uid => {
+            if (!uid) return false; // Bỏ qua nếu dữ liệu rác không có user_id
+            const uidStr = uid.toString();
+            // Không tự gửi cho chính mình & Không gửi trùng 2 lần cho chủ phòng
+            return uidStr !== currentUserIdStr && uidStr !== ownerIdStr;
+          });
+
+          for (const pId of participants) {
+            await Notification.findOneAndUpdate(
+              { recipient_id: pId, type: "room_new_track_participant", target_id: project._id, is_read: false },
+              {
+                target_name: project.title,
+                target_link: `/jam-room?id=${project._id}`,
+                updatedAt: Date.now() // Cập nhật lại thời gian thông báo
+              },
+              { upsert: true, new: true }
+            );
+          }
+        } catch (notifError) {
+          // Ghi lỗi ra console nhưng KHÔNG làm chết quá trình upload của người dùng
+          console.error("Lỗi khi bắn thông báo phòng Jam:", notifError);
+        }
       }
-      await project.save();
     }
 
     res.status(201).json({
@@ -334,23 +405,22 @@ exports.getTrackById = async (req, res) => {
   }
 };
 
-// [PUT] CẬP NHẬT BẢN NHÁP (Kèm bắt Offset và AI)
+// [PUT] CẬP NHẬT BẢN NHÁP VÀ XUẤT BẢN
 exports.updateAudioTrack = async (req, res) => {
   try {
     const { trackId } = req.params;
-    const { status, duration, name, instrument, sync_offset_ms, use_ai_clean } =
-      req.body;
+    const { status, duration, name, instrument, sync_offset_ms, use_ai_clean } = req.body;
 
     const track = await AudioTrack.findById(trackId);
     if (!track) {
-      return res
-        .status(404)
-        .json({ message: "Không tìm thấy bản thu âm này!" });
+      return res.status(404).json({ message: "Không tìm thấy bản thu âm này!" });
     }
 
+    // Nếu có file âm thanh mới tải lên thay thế
     if (req.file) {
       const uploadToCloudinary = (buffer) => {
         return new Promise((resolve, reject) => {
+          const cloudinary = require("../config/cloudinary");
           const uploadStream = cloudinary.uploader.upload_stream(
             { folder: "jamroom_audio", resource_type: "video" },
             (error, result) => {
@@ -365,19 +435,21 @@ exports.updateAudioTrack = async (req, res) => {
       track.raw_audio_url = cloudResult.secure_url;
     }
 
+    // CHỐT CHẶN THÔNG MINH: Lưu lại trạng thái CŨ trước khi cập nhật
+    const oldStatus = track.status;
+
     if (status) track.status = status;
     if (duration) track.duration = Number(duration);
     if (name) track.name = name;
     if (instrument) track.instrument = instrument;
 
-    // ĐÃ SỬA: Cập nhật thông số
-    if (sync_offset_ms !== undefined)
-      track.sync_offset_ms = Number(sync_offset_ms);
+    if (sync_offset_ms !== undefined) track.sync_offset_ms = Number(sync_offset_ms);
     if (use_ai_clean === "true") track.ai_status = "pending";
     else if (use_ai_clean === "false") track.ai_status = "none";
 
     await track.save();
 
+    // KIỂM TRA: Chỉ xử lý đưa lên kệ và bắn thông báo khi track là "published"
     if (track.status === "published") {
       const project = await JamProject.findById(track.project_id);
 
@@ -386,10 +458,10 @@ exports.updateAudioTrack = async (req, res) => {
           (t) => t.instrument === track.instrument,
         );
 
+        // Đưa track lên kệ của Mixer
         if (trackIndex !== -1) {
           project.tracks_config[trackIndex].active_record_id = track._id;
         } else {
-          // ĐÃ SỬA: Lỗi undefined biến instrument -> track.instrument. Lỗi 'volumn' -> 'volume'.
           project.tracks_config.push({
             instrument: track.instrument,
             volume: 80,
@@ -397,6 +469,49 @@ exports.updateAudioTrack = async (req, res) => {
           });
         }
         await project.save();
+
+        // CHỈ BẮN THÔNG BÁO NẾU ĐÂY LÀ LẦN ĐẦU TIÊN XUẤT BẢN (Từ draft -> published)
+        if (oldStatus !== "published") {
+          try {
+            const Notification = require("../models/Notification");
+            const currentUserIdStr = req.user.userId.toString();
+            const ownerIdStr = project.owner_id ? project.owner_id.toString() : "";
+
+            // 1. Gửi thông báo cho Chủ Phòng
+            if (ownerIdStr && ownerIdStr !== currentUserIdStr) {
+              await Notification.create({
+                recipient_id: project.owner_id,
+                type: "room_new_track_owner",
+                target_id: project._id,
+                target_name: project.title,
+                target_link: `/jam-room?id=${project._id}`
+              });
+            }
+
+            // 2. Gửi thông báo cho các Nhạc công khác trong phòng
+            const allTracks = await AudioTrack.find({ project_id: track.project_id, status: "published" }).distinct("user_id");
+
+            const participants = allTracks.filter(uid => {
+              if (!uid) return false;
+              const uidStr = uid.toString();
+              return uidStr !== currentUserIdStr && uidStr !== ownerIdStr;
+            });
+
+            for (const pId of participants) {
+              await Notification.findOneAndUpdate(
+                { recipient_id: pId, type: "room_new_track_participant", target_id: project._id, is_read: false },
+                {
+                  target_name: project.title,
+                  target_link: `/jam-room?id=${project._id}`,
+                  updatedAt: Date.now()
+                },
+                { upsert: true, new: true }
+              );
+            }
+          } catch (notifError) {
+            console.error("Lỗi khi bắn thông báo phòng Jam (lúc update):", notifError);
+          }
+        }
       }
     }
 
@@ -407,6 +522,41 @@ exports.updateAudioTrack = async (req, res) => {
   } catch (error) {
     console.error("Lỗi khi cập nhật bản thu âm:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+// [DELETE] XÓA BẢN THU
+exports.deleteTrack = async (req, res) => {
+  try {
+    const trackId = req.params.trackId;
+    const userId = req.user.userId;
+
+    const track = await AudioTrack.findById(trackId);
+    if (!track) {
+      return res.status(404).json({ message: "Track không tồn tại!" });
+    }
+    if (track.user_id.toString() !== userId) {
+      return res.status(403).json({ message: "Bạn không có quyền xóa track này!" });
+    }
+
+    const trackCount = await AudioTrack.countDocuments({ project_id: track.project_id });
+
+    if (trackCount === 1) {
+      // Nếu là track duy nhất, archive project
+      await JamProject.findByIdAndUpdate(track.project_id, { status: "archived" });
+      await AudioTrack.findByIdAndDelete(trackId);
+      res.status(200).json({ message: "Track đã được xóa và project đã được lưu trữ vì là track duy nhất!", action: "delete_and_archive" });
+    } else {
+      // Nếu có track khác, chỉ xóa track
+      await AudioTrack.findByIdAndDelete(trackId);
+      res.status(200).json({ message: "Track đã được xóa!", action: "delete" });
+    }
+  } catch (error) {
+    console.error("Lỗi khi xóa track:", error);
+    res.status(500).json({
+      message: "Lỗi server khi xóa track",
+      error: error.message,
+    });
   }
 };
 
@@ -541,6 +691,49 @@ exports.getTrendingJams = async (req, res) => {
     res.status(200).json(topTrending);
   } catch (error) {
     console.error("Lỗi khi lấy danh sách phòng Jam thịnh hành:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+// [DELETE] XÓA BẢN THU ÂM
+exports.deleteTrack = async (req, res) => {
+  try {
+    // Tương thích với cả route dùng /:id hoặc /:trackId
+    const trackId = req.params.id || req.params.trackId; 
+    const userId = req.user.userId;
+
+    const track = await AudioTrack.findById(trackId);
+    if (!track) {
+      return res.status(404).json({ message: "Không tìm thấy bản thu!" });
+    }
+
+    // Kiểm tra quyền (Chỉ chủ bản thu mới được xóa)
+    if (track.user_id.toString() !== userId) {
+      return res.status(403).json({ message: "Bạn không có quyền xóa bản thu này!" });
+    }
+
+    // Tiến hành xóa khỏi Database
+    await AudioTrack.findByIdAndDelete(trackId);
+
+    // Dọn dẹp: Nếu bản thu này đang được chọn trên kệ (Mixer) thì gỡ nó xuống
+    if (track.project_id) {
+      const JamProject = require("../models/JamProject");
+      const project = await JamProject.findById(track.project_id);
+      if (project) {
+        let isChanged = false;
+        project.tracks_config.forEach(tc => {
+          if (tc.active_record_id && tc.active_record_id.toString() === trackId) {
+            tc.active_record_id = null; // Gỡ khỏi kệ
+            isChanged = true;
+          }
+        });
+        if (isChanged) await project.save();
+      }
+    }
+
+    res.status(200).json({ message: "Đã xóa bản thu thành công!" });
+  } catch (error) {
+    console.error("Lỗi khi xóa bản thu:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };
