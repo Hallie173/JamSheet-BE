@@ -124,7 +124,7 @@ exports.getJamRoomById = async (req, res) => {
       return res.status(400).json({ message: "ID phòng Jam không hợp lệ!" });
     }
 
-    const project = await JamProject.findById(projectId).populate("sheet_music_id", "file_url");
+    const project = await JamProject.findById(projectId).populate("sheet_music_id", "file_url file_urls");
     if (!project) {
       return res.status(404).json({ message: "Không tìm thấy phòng Jam này!" });
     }
@@ -193,6 +193,7 @@ exports.getJamRoomById = async (req, res) => {
       timeSignature: project.time_signature,
       status: project.status,
       sheetUrl: project.sheet_music_id ? project.sheet_music_id.file_url : null,
+      sheetUrls: project.sheet_music_id ? project.sheet_music_id.file_urls : [],
       tracks: frontendTracks,
     };
 

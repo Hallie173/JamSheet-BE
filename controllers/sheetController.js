@@ -24,6 +24,7 @@ exports.createSheet = async (req, res) => {
             folder: "jamsheet_sheets",
             resource_type: "image", // Bắt buộc là 'image' để Cloudinary phân tích PDF
             format: "pdf",
+            pages: true, // Yêu cầu Cloudinary trả về số trang trong PDF
           },
           (error, result) => {
             if (error) reject(error);
