@@ -14,7 +14,8 @@ exports.createSheet = async (req, res) => {
       return res.status(400).json({ message: "Vui lòng đính kèm file PDF!" });
     }
 
-    const { title, composer, instrument_tags, tempo, genre, time_signature } = req.body;
+    const { title, composer, instrument_tags, tempo, genre, time_signature } =
+      req.body;
 
     // 1. Upload file PDF gốc lên Cloudinary NGAY VÀ LUÔN (Không cần đếm trang trước)
     const uploadToCloudinary = (buffer) => {
@@ -22,14 +23,14 @@ exports.createSheet = async (req, res) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
             folder: "jamsheet_sheets",
-            resource_type: "image", // Bắt buộc là 'image' để Cloudinary phân tích PDF
+            resource_type: "auto", // Đã sửa thành 'auto' để khắc phục lỗi 403 với file PDF
             format: "pdf",
             pages: true, // Yêu cầu Cloudinary trả về số trang trong PDF
           },
           (error, result) => {
             if (error) reject(error);
             else resolve(result); // result này sẽ chứa thuộc tính 'pages' siêu xịn
-          }
+          },
         );
         const { Readable } = require("stream");
         Readable.from(buffer).pipe(uploadStream);
@@ -40,10 +41,12 @@ exports.createSheet = async (req, res) => {
 
     // 2. LẤY TỔNG SỐ TRANG TỪ CHÍNH CLOUDINARY
     // Tránh lỗi nếu Cloudinary không trả về (VD: file lỗi), mặc định là 1 trang
-    const totalPages = cloudResult.pages || 1; 
+    const totalPages = cloudResult.pages || 1;
 
     if (totalPages === 0) {
-      return res.status(400).json({ message: "File PDF không có trang hợp lệ!" });
+      return res
+        .status(400)
+        .json({ message: "File PDF không có trang hợp lệ!" });
     }
 
     // 3. Tạo mảng link ảnh từ link PDF (Sử dụng pg_x transformation của Cloudinary)
@@ -62,7 +65,10 @@ exports.createSheet = async (req, res) => {
       title,
       composer,
       instrument_tags: instrument_tags
-        ? instrument_tags.split(",").map((t) => t.trim()).filter(Boolean)
+        ? instrument_tags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
         : [],
       tempo: Number(tempo),
       genre,
@@ -73,12 +79,14 @@ exports.createSheet = async (req, res) => {
     });
 
     await newSheet.save();
-    
+
     // Đảm bảo response luôn có file_urls là array không bao giờ undefined
     const responseData = newSheet.toObject();
     responseData.file_urls = responseData.file_urls || [];
-    
-    res.status(201).json({ message: "Tải lên thành công!", sheet: responseData });
+
+    res
+      .status(201)
+      .json({ message: "Tải lên thành công!", sheet: responseData });
   } catch (error) {
     console.error("Lỗi xử lý PDF:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
@@ -94,7 +102,7 @@ exports.getMySheets = async (req, res) => {
     }).sort({ createdAt: -1 });
 
     // Đảm bảo file_urls luôn là array
-    const safeSheets = sheets.map(sheet => {
+    const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
       return sheetObj;
@@ -102,7 +110,9 @@ exports.getMySheets = async (req, res) => {
 
     res.status(200).json(safeSheets);
   } catch (error) {
-    res.status(500).json({ message: "Lỗi lấy danh sách nhạc phổ", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Lỗi lấy danh sách nhạc phổ", error: error.message });
   }
 };
 
@@ -114,7 +124,7 @@ exports.getExploreSheets = async (req, res) => {
       .limit(20);
 
     // Đảm bảo file_urls luôn là array
-    const safeSheets = sheets.map(sheet => {
+    const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
       return sheetObj;
@@ -122,7 +132,9 @@ exports.getExploreSheets = async (req, res) => {
 
     res.status(200).json(safeSheets);
   } catch (error) {
-    res.status(500).json({ message: "Lỗi lấy dữ liệu cộng đồng", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Lỗi lấy dữ liệu cộng đồng", error: error.message });
   }
 };
 
@@ -130,7 +142,8 @@ exports.getExploreSheets = async (req, res) => {
 exports.updateSheet = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, composer, instrument_tags, tempo, genre, time_signature } = req.body;
+    const { title, composer, instrument_tags, tempo, genre, time_signature } =
+      req.body;
 
     let tagsArray = [];
     if (Array.isArray(instrument_tags)) {
@@ -144,12 +157,21 @@ exports.updateSheet = async (req, res) => {
 
     const updatedSheet = await SheetMusic.findOneAndUpdate(
       { _id: id, uploader_id: req.user.userId },
-      { title, composer, instrument_tags: tagsArray, tempo, genre, time_signature },
-      { new: true }
+      {
+        title,
+        composer,
+        instrument_tags: tagsArray,
+        tempo,
+        genre,
+        time_signature,
+      },
+      { new: true },
     );
 
     if (!updatedSheet) {
-      return res.status(404).json({ message: "Không tìm thấy nhạc phổ hoặc không có quyền!" });
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy nhạc phổ hoặc không có quyền!" });
     }
 
     // Đồng bộ thông tin sang các phòng Jam liên quan
@@ -162,12 +184,16 @@ exports.updateSheet = async (req, res) => {
           time_signature: updatedSheet.time_signature,
           required_instruments: updatedSheet.instrument_tags,
         },
-      }
+      },
     );
 
-    res.status(200).json({ message: "Cập nhật thành công!", sheet: updatedSheet });
+    res
+      .status(200)
+      .json({ message: "Cập nhật thành công!", sheet: updatedSheet });
   } catch (error) {
-    res.status(500).json({ message: "Lỗi cập nhật nhạc phổ", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Lỗi cập nhật nhạc phổ", error: error.message });
   }
 };
 
@@ -179,20 +205,30 @@ exports.deleteSheet = async (req, res) => {
 
     const sheet = await SheetMusic.findById(sheetId);
     if (!sheet) return res.status(404).json({ message: "Không tồn tại!" });
-    if (sheet.uploader_id.toString() !== userId) return res.status(403).json({ message: "Không có quyền!" });
+    if (sheet.uploader_id.toString() !== userId)
+      return res.status(403).json({ message: "Không có quyền!" });
 
     const associatedRooms = await JamProject.find({ sheet_music_id: sheetId });
     const roomIds = associatedRooms.map((room) => room._id);
-    const trackCount = await AudioTrack.countDocuments({ project_id: { $in: roomIds } });
+    const trackCount = await AudioTrack.countDocuments({
+      project_id: { $in: roomIds },
+    });
 
     if (trackCount === 0) {
       await JamProject.deleteMany({ sheet_music_id: sheetId });
       await SheetMusic.findByIdAndDelete(sheetId);
-      res.status(200).json({ message: "Đã xóa hoàn toàn!", action: "hard_delete" });
+      res
+        .status(200)
+        .json({ message: "Đã xóa hoàn toàn!", action: "hard_delete" });
     } else {
       await SheetMusic.findByIdAndUpdate(sheetId, { is_frozen: true });
-      await JamProject.updateMany({ sheet_music_id: sheetId }, { status: "archived" });
-      res.status(200).json({ message: "Đã đóng băng nhạc phổ!", action: "freeze" });
+      await JamProject.updateMany(
+        { sheet_music_id: sheetId },
+        { status: "archived" },
+      );
+      res
+        .status(200)
+        .json({ message: "Đã đóng băng nhạc phổ!", action: "freeze" });
     }
   } catch (error) {
     res.status(500).json({ message: "Lỗi xóa nhạc phổ", error: error.message });
@@ -210,14 +246,14 @@ exports.searchSheets = async (req, res) => {
     if (genre) filter.genre = { $in: genre.split(",") };
 
     const sheets = await SheetMusic.find(filter).sort({ createdAt: -1 });
-    
+
     // Đảm bảo file_urls luôn là array
-    const safeSheets = sheets.map(sheet => {
+    const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
       return sheetObj;
     });
-    
+
     res.status(200).json(safeSheets);
   } catch (error) {
     res.status(500).json({ message: "Lỗi tìm kiếm", error: error.message });
@@ -231,7 +267,9 @@ exports.toggleLike = async (req, res) => {
     const userId = req.user.userId;
 
     const currentUser = await User.findById(userId);
-    const senderName = currentUser ? (currentUser.username || currentUser.name) : "Một người dùng";
+    const senderName = currentUser
+      ? currentUser.username || currentUser.name
+      : "Một người dùng";
 
     const sheet = await SheetMusic.findById(sheetId);
     if (!sheet) return res.status(404).json({ message: "Không tồn tại!" });
@@ -255,7 +293,12 @@ exports.toggleLike = async (req, res) => {
     }
 
     await sheet.save();
-    res.status(200).json({ message: hasLiked ? "Đã bỏ thích" : "Đã thích", liked_by: sheet.liked_by });
+    res
+      .status(200)
+      .json({
+        message: hasLiked ? "Đã bỏ thích" : "Đã thích",
+        liked_by: sheet.liked_by,
+      });
   } catch (error) {
     res.status(500).json({ message: "Lỗi thả tim", error: error.message });
   }
