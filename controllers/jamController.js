@@ -14,6 +14,7 @@ exports.checkDuplicateJam = async (req, res) => {
     const existingJam = await JamProject.findOne({
       owner_id: req.user.userId,
       title: { $regex: new RegExp(`^${title}$`, "i") },
+      status: { $ne: "archived" },
     });
 
     if (existingJam) {
@@ -21,7 +22,7 @@ exports.checkDuplicateJam = async (req, res) => {
         .status(200)
         .json({ isDuplicate: true, roomId: existingJam._id });
     }
-    res.status(200).json({ isDuplication: false });
+    res.status(200).json({ isDuplicate: false });
   } catch (error) {
     console.error("Lỗi kiểm tra trùng lặp:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
