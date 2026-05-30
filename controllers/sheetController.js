@@ -23,7 +23,7 @@ exports.createSheet = async (req, res) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
             folder: "jamsheet_sheets",
-            resource_type: "auto", // Đã sửa thành 'auto' để khắc phục lỗi 403 với file PDF
+            resource_type: "image",
             format: "pdf",
             pages: true, // Yêu cầu Cloudinary trả về số trang trong PDF
           },
