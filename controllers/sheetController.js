@@ -11,10 +11,20 @@ const { Readable } = require("stream");
 // [POST] TẠO NHẠC PHỔ MỚI (Nhận sẵn mảng link ảnh từ Frontend)
 exports.createSheet = async (req, res) => {
   try {
-    const { title, composer, instrument_tags, tempo, genre, time_signature, file_urls } = req.body;
+    const {
+      title,
+      composer,
+      instrument_tags,
+      tempo,
+      genre,
+      time_signature,
+      file_urls,
+    } = req.body;
 
     if (!file_urls || file_urls.length === 0) {
-      return res.status(400).json({ message: "Không nhận được link ảnh nhạc phổ!" });
+      return res
+        .status(400)
+        .json({ message: "Không nhận được link ảnh nhạc phổ!" });
     }
 
     // Không cần xử lý Cloudinary SDK ở đây nữa
@@ -22,14 +32,17 @@ exports.createSheet = async (req, res) => {
       title,
       composer,
       instrument_tags: instrument_tags
-        ? instrument_tags.split(",").map((t) => t.trim()).filter(Boolean)
+        ? instrument_tags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
         : [],
       tempo: Number(tempo),
       genre,
       time_signature,
       uploader_id: req.user.userId,
       file_url: file_urls[0], // Lấy ảnh đầu tiên làm ảnh bìa
-      file_urls: file_urls,   // Lưu nguyên mảng ảnh
+      file_urls: file_urls, // Lưu nguyên mảng ảnh
     });
 
     await newSheet.save();
@@ -37,7 +50,9 @@ exports.createSheet = async (req, res) => {
     const responseData = newSheet.toObject();
     responseData.file_urls = responseData.file_urls || [];
 
-    res.status(201).json({ message: "Tạo nhạc phổ thành công!", sheet: responseData });
+    res
+      .status(201)
+      .json({ message: "Tạo nhạc phổ thành công!", sheet: responseData });
   } catch (error) {
     console.error("Lỗi tạo nhạc phổ:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
@@ -71,7 +86,7 @@ exports.getMySheets = async (req, res) => {
 exports.getExploreSheets = async (req, res) => {
   try {
     const sheets = await SheetMusic.find({ is_frozen: { $ne: true } })
-      .sort({ likes_count: -1 })
+      .sort({ likes_count: -1, createdAt: -1 })
       .limit(20);
 
     // Đảm bảo file_urls luôn là array
@@ -229,8 +244,13 @@ exports.toggleLike = async (req, res) => {
 
     if (hasLiked) {
       sheet.liked_by.pull(userId);
+      // Giảm count đi 1 (đảm bảo không bị âm)
+      sheet.likes_count = Math.max(0, (sheet.likes_count || 0) - 1);
     } else {
       sheet.liked_by.push(userId);
+      // Tăng count lên 1
+      sheet.likes_count = (sheet.likes_count || 0) + 1;
+
       if (sheet.uploader_id.toString() !== userId) {
         await Notification.create({
           recipient_id: sheet.uploader_id,
@@ -245,12 +265,11 @@ exports.toggleLike = async (req, res) => {
     }
 
     await sheet.save();
-    res
-      .status(200)
-      .json({
-        message: hasLiked ? "Đã bỏ thích" : "Đã thích",
-        liked_by: sheet.liked_by,
-      });
+    res.status(200).json({
+      message: hasLiked ? "Đã bỏ thích" : "Đã thích",
+      liked_by: sheet.liked_by,
+      likes_count: sheet.likes_count,
+    });
   } catch (error) {
     res.status(500).json({ message: "Lỗi thả tim", error: error.message });
   }
