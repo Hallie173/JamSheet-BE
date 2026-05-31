@@ -77,33 +77,14 @@ exports.updateProfile = async (req, res) => {
 
 exports.uploadAvatar = async (req, res) => {
   try {
-    if (!req.file) {
-      return res
-        .status(400)
-        .json({ message: "Vui lòng chọn một tệp hình ảnh để tải lên!" });
+    const { avatar_url } = req.body;
+    if (!avatar_url) {
+      return res.status(400).json({ message: "Không nhận được link ảnh!" });
     }
-
-    const uploadToCloudinary = (buffer) => {
-      return new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          {
-            folder: "jamsheet_avatars",
-          },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          },
-        );
-        const stream = Readable.from([buffer]);
-        stream.pipe(uploadStream);
-      });
-    };
-
-    const cloudResult = await uploadToCloudinary(req.file.buffer);
-
+    // Chỉ phản hồi lại URL để Frontend (Profile.jsx) lưu vào State tạm thời
     res.status(200).json({
       message: "Tải lên ảnh đại diện thành công!",
-      avatar_url: cloudResult.secure_url, 
+      avatar_url: avatar_url, 
     });
   } catch (error) {
     console.error("Lỗi upload avatar:", error);
@@ -113,21 +94,16 @@ exports.uploadAvatar = async (req, res) => {
 
 exports.uploadCover = async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ message: "Vui lòng chọn ảnh bìa!" });
-
-    const uploadToCloudinary = (buffer) => {
-      return new Promise((resolve, reject) => {
-        const uploadStream = require("../config/cloudinary").uploader.upload_stream(
-          { folder: "jamsheet_covers" },
-          (error, result) => { if (error) reject(error); else resolve(result); }
-        );
-        require("stream").Readable.from([buffer]).pipe(uploadStream);
-      });
-    };
-
-    const cloudResult = await uploadToCloudinary(req.file.buffer);
-    res.status(200).json({ message: "Thành công!", cover_url: cloudResult.secure_url });
+    const { cover_url } = req.body;
+    if (!cover_url) {
+      return res.status(400).json({ message: "Không nhận được link ảnh bìa!" });
+    }
+    res.status(200).json({ 
+      message: "Thành công!", 
+      cover_url: cover_url 
+    });
   } catch (error) {
+    console.error("Lỗi upload ảnh bìa:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };

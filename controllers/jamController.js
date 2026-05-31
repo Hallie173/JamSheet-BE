@@ -270,39 +270,22 @@ exports.toggleLikeTrack = async (req, res) => {
 exports.uploadAudioTrack = async (req, res) => {
   try {
     const projectId = req.params.id;
-    const { instrument, name, status, duration, sync_offset_ms, use_ai_clean } = req.body;
+    const { instrument, name, status, duration, sync_offset_ms, use_ai_clean, raw_audio_url } = req.body;
 
-    if (!req.file) {
-      return res.status(400).json({ message: "Vui lòng chọn file audio để upload!" });
+    if (!raw_audio_url) {
+      return res.status(400).json({ message: "Thiếu đường dẫn file âm thanh!" });
     }
-
-    const uploadToCloudinary = (buffer) => {
-      return new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          { folder: "jamroom_audio", resource_type: "video" },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          }
-        );
-        const { Readable } = require("stream");
-        const stream = Readable.from([buffer]);
-        stream.pipe(uploadStream);
-      });
-    };
-
-    const cloudResult = await uploadToCloudinary(req.file.buffer);
 
     const newTrack = new AudioTrack({
       project_id: projectId,
       user_id: req.user.userId,
       instrument: instrument,
       name: name || `Take nháp - ${new Date().toLocaleTimeString()}`,
-      raw_audio_url: cloudResult.secure_url,
+      raw_audio_url: raw_audio_url,
       duration: Number(duration) || 0,
       status: status || "draft",
       sync_offset_ms: Number(sync_offset_ms) || 0,
-      ai_status: use_ai_clean === "true" ? "pending" : "none",
+      ai_status: use_ai_clean === "true" || use_ai_clean === true ? "pending" : "none",
     });
 
     await newTrack.save();
@@ -325,15 +308,12 @@ exports.uploadAudioTrack = async (req, res) => {
         }
         await project.save();
 
-        // ---- LOGIC BẮN THÔNG BÁO PHÒNG JAM (Đã bọc thép an toàn) ----
+        // ---- LOGIC BẮN THÔNG BÁO ----
         try {
           const Notification = require("../models/Notification");
           const currentUserIdStr = req.user.userId.toString();
-          
-          // Kiểm tra an toàn xem phòng có owner_id không
           const ownerIdStr = project.owner_id ? project.owner_id.toString() : "";
 
-          // 1. Gửi cho Chủ Phòng (nếu người up không phải chủ phòng)
           if (ownerIdStr && ownerIdStr !== currentUserIdStr) {
             await Notification.create({
               recipient_id: project.owner_id,
@@ -344,13 +324,10 @@ exports.uploadAudioTrack = async (req, res) => {
             });
           }
 
-          // 2. Gửi cho các Nhạc công khác đang tham gia phòng
           const allTracks = await AudioTrack.find({ project_id: projectId, status: "published" }).distinct("user_id");
-          
           const participants = allTracks.filter(uid => {
-            if (!uid) return false; // Bỏ qua nếu dữ liệu rác không có user_id
+            if (!uid) return false; 
             const uidStr = uid.toString();
-            // Không tự gửi cho chính mình & Không gửi trùng 2 lần cho chủ phòng
             return uidStr !== currentUserIdStr && uidStr !== ownerIdStr;
           });
 
@@ -360,13 +337,12 @@ exports.uploadAudioTrack = async (req, res) => {
               {
                 target_name: project.title,
                 target_link: `/jam-room?id=${project._id}`,
-                updatedAt: Date.now() // Cập nhật lại thời gian thông báo
+                updatedAt: Date.now() 
               },
               { upsert: true, new: true }
             );
           }
         } catch (notifError) {
-          // Ghi lỗi ra console nhưng KHÔNG làm chết quá trình upload của người dùng
           console.error("Lỗi khi bắn thông báo phòng Jam:", notifError);
         }
       }
@@ -412,33 +388,18 @@ exports.getTrackById = async (req, res) => {
 exports.updateAudioTrack = async (req, res) => {
   try {
     const { trackId } = req.params;
-    const { status, duration, name, instrument, sync_offset_ms, use_ai_clean } = req.body;
+    const { status, duration, name, instrument, sync_offset_ms, use_ai_clean, raw_audio_url } = req.body;
 
     const track = await AudioTrack.findById(trackId);
     if (!track) {
       return res.status(404).json({ message: "Không tìm thấy bản thu âm này!" });
     }
 
-    // Nếu có file âm thanh mới tải lên thay thế
-    if (req.file) {
-      const uploadToCloudinary = (buffer) => {
-        return new Promise((resolve, reject) => {
-          const cloudinary = require("../config/cloudinary");
-          const uploadStream = cloudinary.uploader.upload_stream(
-            { folder: "jamroom_audio", resource_type: "video" },
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
-            },
-          );
-          require("stream").Readable.from([buffer]).pipe(uploadStream);
-        });
-      };
-      const cloudResult = await uploadToCloudinary(req.file.buffer);
-      track.raw_audio_url = cloudResult.secure_url;
+    // Nếu có truyền link mới lên (Ghi đè bản thu)
+    if (raw_audio_url) {
+      track.raw_audio_url = raw_audio_url;
     }
 
-    // CHỐT CHẶN THÔNG MINH: Lưu lại trạng thái CŨ trước khi cập nhật
     const oldStatus = track.status;
 
     if (status) track.status = status;
@@ -447,12 +408,11 @@ exports.updateAudioTrack = async (req, res) => {
     if (instrument) track.instrument = instrument;
 
     if (sync_offset_ms !== undefined) track.sync_offset_ms = Number(sync_offset_ms);
-    if (use_ai_clean === "true") track.ai_status = "pending";
-    else if (use_ai_clean === "false") track.ai_status = "none";
+    if (use_ai_clean === "true" || use_ai_clean === true) track.ai_status = "pending";
+    else if (use_ai_clean === "false" || use_ai_clean === false) track.ai_status = "none";
 
     await track.save();
 
-    // KIỂM TRA: Chỉ xử lý đưa lên kệ và bắn thông báo khi track là "published"
     if (track.status === "published") {
       const project = await JamProject.findById(track.project_id);
 
@@ -461,7 +421,6 @@ exports.updateAudioTrack = async (req, res) => {
           (t) => t.instrument === track.instrument,
         );
 
-        // Đưa track lên kệ của Mixer
         if (trackIndex !== -1) {
           project.tracks_config[trackIndex].active_record_id = track._id;
         } else {
@@ -473,14 +432,12 @@ exports.updateAudioTrack = async (req, res) => {
         }
         await project.save();
 
-        // CHỈ BẮN THÔNG BÁO NẾU ĐÂY LÀ LẦN ĐẦU TIÊN XUẤT BẢN (Từ draft -> published)
         if (oldStatus !== "published") {
           try {
             const Notification = require("../models/Notification");
             const currentUserIdStr = req.user.userId.toString();
             const ownerIdStr = project.owner_id ? project.owner_id.toString() : "";
 
-            // 1. Gửi thông báo cho Chủ Phòng
             if (ownerIdStr && ownerIdStr !== currentUserIdStr) {
               await Notification.create({
                 recipient_id: project.owner_id,
@@ -491,9 +448,7 @@ exports.updateAudioTrack = async (req, res) => {
               });
             }
 
-            // 2. Gửi thông báo cho các Nhạc công khác trong phòng
             const allTracks = await AudioTrack.find({ project_id: track.project_id, status: "published" }).distinct("user_id");
-
             const participants = allTracks.filter(uid => {
               if (!uid) return false;
               const uidStr = uid.toString();
