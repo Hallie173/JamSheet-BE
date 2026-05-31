@@ -7,6 +7,7 @@ const uploadSheet = require("../middleware/uploadSheetMiddleware");
 router.get("/explore", sheetController.getExploreSheets);
 router.get("/search", sheetController.searchSheets);
 router.get("/my-sheets", authMiddleware, sheetController.getMySheets);
+router.get("/:id", sheetController.getSheetById);
 router.post("/", authMiddleware, sheetController.createSheet);
 router.put("/:id", authMiddleware, sheetController.updateSheet);
 router.delete("/:id", authMiddleware, sheetController.deleteSheet);

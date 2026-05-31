@@ -259,7 +259,7 @@ exports.toggleLike = async (req, res) => {
           type: "sheet_like",
           target_id: sheet._id,
           target_name: sheet.title,
-          target_link: `/sheets-library?q=${encodeURIComponent(sheet.title)}`,
+          target_link: `/sheets-library?sheet_id=${sheet._id}`,
         });
       }
     }
@@ -272,5 +272,27 @@ exports.toggleLike = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: "Lỗi thả tim", error: error.message });
+  }
+};
+
+// [GET] LẤY THÔNG TIN NHẠC PHỔ THEO ID (dùng cho notification redirect)
+exports.getSheetById = async (req, res) => {
+  try {
+    const sheet = await SheetMusic.findById(req.params.id);
+
+    // Trả 404 nếu không tồn tại hoặc đã bị frozen
+    if (!sheet || sheet.is_frozen) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy nhạc phổ nào phù hợp." });
+    }
+
+    const sheetObj = sheet.toObject();
+    sheetObj.file_urls = sheetObj.file_urls || [];
+    res.status(200).json(sheetObj);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Lỗi lấy thông tin nhạc phổ", error: error.message });
   }
 };
