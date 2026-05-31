@@ -10,7 +10,7 @@ router.get("/my-sheets", authMiddleware, sheetController.getMySheets);
 router.post(
   "/",
   authMiddleware,
-  upload.array('files', 20),
+  uploadSheet.array('files', 20),
   sheetController.createSheet,
 );
 router.put("/:id", authMiddleware, sheetController.updateSheet);
