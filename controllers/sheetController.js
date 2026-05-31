@@ -6,87 +6,74 @@ const User = require("../models/User");
 const cloudinary = require("../config/cloudinary");
 const { Readable } = require("stream");
 
-// [POST] TẠO NHẠC PHỔ MỚI (Xử lý PDF thành mảng ảnh qua Cloudinary)
-// [POST] TẠO NHẠC PHỔ MỚI (Dùng sức mạnh đếm trang tích hợp sẵn của Cloudinary)
+// [POST] TẠO NHẠC PHỔ MỚI (Upload song song nhiều ảnh cùng lúc)
 exports.createSheet = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: "Vui lòng đính kèm file PDF!" });
+    // Kiểm tra mảng req.files thay vì req.file đơn lẻ
+    if (!req.files || req.files.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "Vui lòng đính kèm ít nhất 1 ảnh nhạc phổ!" });
     }
 
     const { title, composer, instrument_tags, tempo, genre, time_signature } =
       req.body;
 
-    // Kiểm tra nhanh xem file nhận được từ Frontend có bị hỏng/trống không
     console.log("📦 THÔNG TIN FILE NHẬN ĐƯỢC:");
-    console.log(`- Tên file: ${req.file.originalname}`);
-    console.log(`- Kích thước: ${req.file.size} bytes`);
-    console.log(`- Mimetype: ${req.file.mimetype}`);
+    console.log(`- Số lượng ảnh: ${req.files.length}`);
 
-    // 1. Upload file PDF gốc lên Cloudinary với hệ thống bẫy lỗi sâu
+    // Hàm upload 1 file buffer lên Cloudinary
     const uploadToCloudinary = (buffer) => {
       return new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
             folder: "jamsheet_sheets",
-            resource_type: "raw", // Vẫn giữ nguyên image theo ticket hỗ trợ
-            // format: "pdf",
-            // pages: true,
+            resource_type: "image", // Chắc chắn là image
           },
           (error, result) => {
             if (error) {
-              // Bẫy 1: In toàn bộ chi tiết object lỗi của Cloudinary ra Terminal
-              console.error("🔥 [LỖI TỪ CLOUDINARY]:", JSON.stringify(error, null, 2));
+              console.error(
+                "🔥 [LỖI TỪ CLOUDINARY]:",
+                JSON.stringify(error, null, 2),
+              );
               return reject(error);
             }
             resolve(result);
-          }
+          },
         );
 
-        // Bẫy 2: Bắt lỗi nếu đường ống (pipe) bị vỡ giữa chừng khi đang gửi lên mạng
-        uploadStream.on('error', (streamErr) => {
-            console.error("💥 [LỖI STREAM NETWORK]: Đường truyền bị ngắt!", streamErr);
-            reject(streamErr);
+        uploadStream.on("error", (streamErr) => {
+          console.error(
+            "💥 [LỖI STREAM NETWORK]: Đường truyền bị ngắt!",
+            streamErr,
+          );
+          reject(streamErr);
         });
 
-        const { Readable } = require("stream");
         const readableStream = Readable.from([buffer]);
 
-        // Bẫy 3: Bắt lỗi ngay khi đang đọc Buffer từ RAM của server
-        readableStream.on('error', (readErr) => {
-             console.error("🚨 [LỖI ĐỌC BUFFER RAM]: Không thể đọc file!", readErr);
-             reject(readErr);
+        readableStream.on("error", (readErr) => {
+          console.error(
+            "🚨 [LỖI ĐỌC BUFFER RAM]: Không thể đọc file!",
+            readErr,
+          );
+          reject(readErr);
         });
 
-        // Bắt đầu bơm dữ liệu
         readableStream.pipe(uploadStream);
       });
     };
 
-    const cloudResult = await uploadToCloudinary(req.file.buffer);
+    // 1. Upload song song tất cả các ảnh dùng Promise.all
+    const uploadPromises = req.files.map((file) =>
+      uploadToCloudinary(file.buffer),
+    );
+    const cloudResults = await Promise.all(uploadPromises);
 
-    // 2. LẤY TỔNG SỐ TRANG TỪ CHÍNH CLOUDINARY
-    // Tránh lỗi nếu Cloudinary không trả về (VD: file lỗi), mặc định là 1 trang
-    const totalPages = cloudResult.pages || 1;
+    // 2. Trích xuất mảng chứa tất cả các link ảnh vừa upload xong
+    const file_urls = cloudResults.map((result) => result.secure_url);
 
-    if (totalPages === 0) {
-      return res
-        .status(400)
-        .json({ message: "File PDF không có trang hợp lệ!" });
-    }
-
-    // 3. Tạo mảng link ảnh từ link PDF (Sử dụng pg_x transformation của Cloudinary)
-    const file_urls = [];
-    const baseUrl = cloudResult.secure_url;
-
-    for (let i = 1; i <= totalPages; i++) {
-      const imageUrl = baseUrl
-        .replace("/upload/", `/upload/pg_${i}/`)
-        .replace(".pdf", ".jpg");
-      file_urls.push(imageUrl);
-    }
-
-    // 4. Lưu vào Database
+    // 3. Lưu vào Database
     const newSheet = new SheetMusic({
       title,
       composer,
@@ -100,13 +87,12 @@ exports.createSheet = async (req, res) => {
       genre,
       time_signature,
       uploader_id: req.user.userId,
-      file_url: file_urls[0], // Link trang đầu làm thumbnail (luôn tồn tại)
-      file_urls: file_urls, // Mảng toàn bộ các trang ảnh (luôn có ít nhất 1 trang)
+      file_url: file_urls[0], // Lấy ảnh đầu tiên làm ảnh bìa thumbnail
+      file_urls: file_urls, // Lưu nguyên mảng ảnh vào
     });
 
     await newSheet.save();
 
-    // Đảm bảo response luôn có file_urls là array không bao giờ undefined
     const responseData = newSheet.toObject();
     responseData.file_urls = responseData.file_urls || [];
 
@@ -114,7 +100,7 @@ exports.createSheet = async (req, res) => {
       .status(201)
       .json({ message: "Tải lên thành công!", sheet: responseData });
   } catch (error) {
-    console.error("Lỗi xử lý PDF:", error);
+    console.error("Lỗi xử lý ảnh nhạc phổ:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };
@@ -127,7 +113,6 @@ exports.getMySheets = async (req, res) => {
       is_frozen: { $ne: true },
     }).sort({ createdAt: -1 });
 
-    // Đảm bảo file_urls luôn là array
     const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
@@ -149,7 +134,6 @@ exports.getExploreSheets = async (req, res) => {
       .sort({ likes_count: -1 })
       .limit(20);
 
-    // Đảm bảo file_urls luôn là array
     const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
@@ -200,7 +184,6 @@ exports.updateSheet = async (req, res) => {
         .json({ message: "Không tìm thấy nhạc phổ hoặc không có quyền!" });
     }
 
-    // Đồng bộ thông tin sang các phòng Jam liên quan
     await JamProject.updateMany(
       { sheet_music_id: id },
       {
@@ -223,7 +206,7 @@ exports.updateSheet = async (req, res) => {
   }
 };
 
-// [DELETE] XÓA NHẠC PHỔ (Xóa cứng hoặc Đóng băng)
+// [DELETE] XÓA NHẠC PHỔ
 exports.deleteSheet = async (req, res) => {
   try {
     const sheetId = req.params.id;
@@ -273,7 +256,6 @@ exports.searchSheets = async (req, res) => {
 
     const sheets = await SheetMusic.find(filter).sort({ createdAt: -1 });
 
-    // Đảm bảo file_urls luôn là array
     const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
