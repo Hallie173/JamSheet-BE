@@ -254,7 +254,7 @@ exports.toggleLike = async (req, res) => {
       if (sheet.uploader_id.toString() !== userId) {
         await Notification.create({
           recipient_id: sheet.uploader_id,
-          sender_id: userId,
+          sender_id: req.user.userId,
           sender_name: senderName,
           type: "sheet_like",
           target_id: sheet._id,
