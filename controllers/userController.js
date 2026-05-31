@@ -11,9 +11,9 @@ exports.getProfile = async (req, res) => {
     if (!user) return res.status(404).json({ message: "Người dùng không tồn tại!" });
 
     // 1. Thống kê cơ bản
-    const total_sheets_uploaded = await SheetMusic.countDocuments({ uploader_id: userId });
+    const total_sheets_uploaded = await SheetMusic.countDocuments({ uploader_id: userId, is_frozen: { $ne: true } });
     const total_tracks_contributed = await AudioTrack.countDocuments({ user_id: userId });
-    
+
     const userTracks = await AudioTrack.find({ user_id: userId }).select("project_id");
     const uniqueProjects = new Set(userTracks.map(t => t.project_id?.toString()).filter(Boolean));
     const total_projects_joined = uniqueProjects.size;
@@ -84,7 +84,7 @@ exports.uploadAvatar = async (req, res) => {
     // Chỉ phản hồi lại URL để Frontend (Profile.jsx) lưu vào State tạm thời
     res.status(200).json({
       message: "Tải lên ảnh đại diện thành công!",
-      avatar_url: avatar_url, 
+      avatar_url: avatar_url,
     });
   } catch (error) {
     console.error("Lỗi upload avatar:", error);
@@ -98,9 +98,9 @@ exports.uploadCover = async (req, res) => {
     if (!cover_url) {
       return res.status(400).json({ message: "Không nhận được link ảnh bìa!" });
     }
-    res.status(200).json({ 
-      message: "Thành công!", 
-      cover_url: cover_url 
+    res.status(200).json({
+      message: "Thành công!",
+      cover_url: cover_url
     });
   } catch (error) {
     console.error("Lỗi upload ảnh bìa:", error);
