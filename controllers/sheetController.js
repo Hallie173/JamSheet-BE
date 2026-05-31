@@ -17,24 +17,49 @@ exports.createSheet = async (req, res) => {
     const { title, composer, instrument_tags, tempo, genre, time_signature } =
       req.body;
 
-    // 1. Upload file PDF gốc lên Cloudinary NGAY VÀ LUÔN (Không cần đếm trang trước)
+    // Kiểm tra nhanh xem file nhận được từ Frontend có bị hỏng/trống không
+    console.log("📦 THÔNG TIN FILE NHẬN ĐƯỢC:");
+    console.log(`- Tên file: ${req.file.originalname}`);
+    console.log(`- Kích thước: ${req.file.size} bytes`);
+    console.log(`- Mimetype: ${req.file.mimetype}`);
+
+    // 1. Upload file PDF gốc lên Cloudinary với hệ thống bẫy lỗi sâu
     const uploadToCloudinary = (buffer) => {
       return new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
             folder: "jamsheet_sheets",
-            resource_type: "image",
+            resource_type: "image", // Vẫn giữ nguyên image theo ticket hỗ trợ
             format: "pdf",
-            pages: true, // Yêu cầu Cloudinary trả về số trang trong PDF
+            pages: true,
           },
           (error, result) => {
-            if (error) reject(error);
-            else resolve(result); // result này sẽ chứa thuộc tính 'pages' siêu xịn
-          },
+            if (error) {
+              // Bẫy 1: In toàn bộ chi tiết object lỗi của Cloudinary ra Terminal
+              console.error("🔥 [LỖI TỪ CLOUDINARY]:", JSON.stringify(error, null, 2));
+              return reject(error);
+            }
+            resolve(result);
+          }
         );
+
+        // Bẫy 2: Bắt lỗi nếu đường ống (pipe) bị vỡ giữa chừng khi đang gửi lên mạng
+        uploadStream.on('error', (streamErr) => {
+            console.error("💥 [LỖI STREAM NETWORK]: Đường truyền bị ngắt!", streamErr);
+            reject(streamErr);
+        });
+
         const { Readable } = require("stream");
-        const stream = Readable.from([buffer]);
-        stream.pipe(uploadStream);
+        const readableStream = Readable.from([buffer]);
+
+        // Bẫy 3: Bắt lỗi ngay khi đang đọc Buffer từ RAM của server
+        readableStream.on('error', (readErr) => {
+             console.error("🚨 [LỖI ĐỌC BUFFER RAM]: Không thể đọc file!", readErr);
+             reject(readErr);
+        });
+
+        // Bắt đầu bơm dữ liệu
+        readableStream.pipe(uploadStream);
       });
     };
 
