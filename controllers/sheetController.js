@@ -33,7 +33,8 @@ exports.createSheet = async (req, res) => {
           },
         );
         const { Readable } = require("stream");
-        Readable.from(buffer).pipe(uploadStream);
+        const stream = Readable.from([buffer]);
+        stream.pipe(uploadStream);
       });
     };
 

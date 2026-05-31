@@ -286,7 +286,8 @@ exports.uploadAudioTrack = async (req, res) => {
           }
         );
         const { Readable } = require("stream");
-        Readable.from(buffer).pipe(uploadStream);
+        const stream = Readable.from([buffer]);
+        stream.pipe(uploadStream);
       });
     };
 
@@ -430,7 +431,7 @@ exports.updateAudioTrack = async (req, res) => {
               else resolve(result);
             },
           );
-          require("stream").Readable.from(buffer).pipe(uploadStream);
+          require("stream").Readable.from([buffer]).pipe(uploadStream);
         });
       };
       const cloudResult = await uploadToCloudinary(req.file.buffer);

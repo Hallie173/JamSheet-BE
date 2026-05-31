@@ -94,7 +94,8 @@ exports.uploadAvatar = async (req, res) => {
             else resolve(result);
           },
         );
-        Readable.from(buffer).pipe(uploadStream);
+        const stream = Readable.from([buffer]);
+        stream.pipe(uploadStream);
       });
     };
 
@@ -120,7 +121,7 @@ exports.uploadCover = async (req, res) => {
           { folder: "jamsheet_covers" },
           (error, result) => { if (error) reject(error); else resolve(result); }
         );
-        require("stream").Readable.from(buffer).pipe(uploadStream);
+        require("stream").Readable.from([buffer]).pipe(uploadStream);
       });
     };
 
