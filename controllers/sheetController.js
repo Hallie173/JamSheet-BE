@@ -29,9 +29,9 @@ exports.createSheet = async (req, res) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
             folder: "jamsheet_sheets",
-            resource_type: "image", // Vẫn giữ nguyên image theo ticket hỗ trợ
-            format: "pdf",
-            pages: true,
+            resource_type: "raw", // Vẫn giữ nguyên image theo ticket hỗ trợ
+            // format: "pdf",
+            // pages: true,
           },
           (error, result) => {
             if (error) {
