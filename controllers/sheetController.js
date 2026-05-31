@@ -116,7 +116,7 @@ exports.updateSheet = async (req, res) => {
         genre,
         time_signature,
       },
-      { new: true },
+      { returnDocument: "after" },
     );
 
     if (!updatedSheet) {
@@ -234,6 +234,7 @@ exports.toggleLike = async (req, res) => {
       if (sheet.uploader_id.toString() !== userId) {
         await Notification.create({
           recipient_id: sheet.uploader_id,
+          sender_id: userId,
           sender_name: senderName,
           type: "sheet_like",
           target_id: sheet._id,

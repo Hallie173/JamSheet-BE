@@ -63,7 +63,7 @@ exports.updateProfile = async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(
       req.user.userId,
       { username, bio, avatar_url, cover_url, instruments },
-      { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
     ).select("-password_hash");
 
     res.status(200).json({

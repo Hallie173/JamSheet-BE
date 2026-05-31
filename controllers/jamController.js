@@ -246,6 +246,7 @@ exports.toggleLikeTrack = async (req, res) => {
       } else {
         await Notification.create({
           recipient_id: track.user_id,
+          sender_id: userId,
           type: "track_likes",
           target_id: track._id,
           target_name: track.name,
@@ -317,6 +318,7 @@ exports.uploadAudioTrack = async (req, res) => {
           if (ownerIdStr && ownerIdStr !== currentUserIdStr) {
             await Notification.create({
               recipient_id: project.owner_id,
+              sender_id: userId,
               type: "room_new_track_owner",
               target_id: project._id,
               target_name: project.title,
@@ -339,7 +341,7 @@ exports.uploadAudioTrack = async (req, res) => {
                 target_link: `/jam-room?id=${project._id}`,
                 updatedAt: Date.now() 
               },
-              { upsert: true, new: true }
+              { upsert: true, returnDocument: "after" }
             );
           }
         } catch (notifError) {
@@ -441,6 +443,7 @@ exports.updateAudioTrack = async (req, res) => {
             if (ownerIdStr && ownerIdStr !== currentUserIdStr) {
               await Notification.create({
                 recipient_id: project.owner_id,
+                sender_id: userId,
                 type: "room_new_track_owner",
                 target_id: project._id,
                 target_name: project.title,
@@ -463,7 +466,7 @@ exports.updateAudioTrack = async (req, res) => {
                   target_link: `/jam-room?id=${project._id}`,
                   updatedAt: Date.now()
                 },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: "after" }
               );
             }
           } catch (notifError) {
