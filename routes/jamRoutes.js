@@ -15,6 +15,8 @@ router.get("/recent-drafts", authMiddleware, jamController.getRecentDrafts);
 
 router.get("/trending", jamController.getTrendingJams);
 
+router.get("/needs-you", authMiddleware, jamController.getJamsNeedingUser);
+
 router.get("/find-by-sheet/:sheetId", authMiddleware, jamController.findJamBySheetId);
 
 router.get("/tracks/:trackId", authMiddleware, jamController.getTrackById);

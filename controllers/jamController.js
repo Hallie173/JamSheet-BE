@@ -588,16 +588,19 @@ exports.getRecentDrafts = async (req, res) => {
     const userId = req.user.userId;
 
     const drafts = await AudioTrack.find({ user_id: userId, status: "draft" })
-      .populate("project_id", "title")
+      .populate("project_id", "title status")
       .sort({ createdAt: -1 })
-      .limit(3);
+      .limit(10); // Lấy nhiều hơn để bù trừ sau khi filter
 
-    const validDrafts = drafts.filter(draft => draft.project_id != null);
+    // Chỉ lấy các bản nháp thuộc phòng còn active (không bị frozen/archived)
+    const validDrafts = drafts.filter(
+      (draft) => draft.project_id != null && draft.project_id.status !== "archived"
+    );
 
-    const formattedDrafts = validDrafts.map((draft) => ({
+    const formattedDrafts = validDrafts.slice(0, 3).map((draft) => ({
       id: draft.project_id._id,
       draftId: draft._id,
-      title: draft.project_id.title || "Phòng Jam có thể đã bị xóa",
+      title: draft.project_id.title || "Phòng Jam không xác định",
       role: draft.instrument,
       lastActive: draft.updatedAt,
     }));
@@ -695,6 +698,75 @@ exports.deleteTrack = async (req, res) => {
     res.status(200).json({ message: "Đã xóa bản thu thành công!" });
   } catch (error) {
     console.error("Lỗi khi xóa bản thu:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+// [GET] CÁC PHÒNG JAM ĐANG CẦN NHẠC CỤ CỦA USER (dùng cho trang Home)
+exports.getJamsNeedingUser = async (req, res) => {
+  try {
+    const User = require("../models/User");
+    const user = await User.findById(req.user.userId).select("instruments");
+    const userInstruments = user?.instruments || [];
+
+    if (userInstruments.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    // Tìm các phòng active có required_instruments giao với nhạc cụ của user
+    const rooms = await JamProject.find({
+      status: "active",
+      required_instruments: { $in: userInstruments },
+      owner_id: { $ne: req.user.userId }, // Không hiện phòng của chính user
+    })
+      .populate("owner_id", "username name")
+      .sort({ createdAt: -1 })
+      .limit(20);
+
+    const result = [];
+
+    for (const room of rooms) {
+      // Đếm số bản thu đã có trong phòng
+      const trackCount = await AudioTrack.countDocuments({
+        project_id: room._id,
+        status: "published",
+      });
+
+      // Điều kiện: dưới 10 bản thu
+      if (trackCount < 10) {
+        // Tìm các nhạc cụ còn thiếu (chưa có bản thu published)
+        const publishedInstruments = await AudioTrack.find({
+          project_id: room._id,
+          status: "published",
+        }).distinct("instrument");
+
+        const missingInstruments = room.required_instruments.filter(
+          (inst) => !publishedInstruments.includes(inst)
+        );
+
+        // Chỉ lấy các nhạc cụ còn thiếu mà trùng với user
+        const matchingMissing = missingInstruments.filter((inst) =>
+          userInstruments.includes(inst)
+        );
+
+        if (matchingMissing.length > 0) {
+          result.push({
+            id: room._id,
+            title: room.title,
+            creator: room.owner_id?.username || room.owner_id?.name || "Unknown",
+            required_instruments: room.required_instruments,
+            missing_instruments: missingInstruments,
+            matching_instruments: matchingMissing,
+            track_count: trackCount,
+            total_slots: room.required_instruments.length,
+          });
+        }
+      }
+    }
+
+    res.status(200).json(result.slice(0, 6));
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách phòng Jam cần user:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };
