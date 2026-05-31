@@ -7,12 +7,7 @@ const uploadSheet = require("../middleware/uploadSheetMiddleware");
 router.get("/explore", sheetController.getExploreSheets);
 
 router.get("/my-sheets", authMiddleware, sheetController.getMySheets);
-router.post(
-  "/",
-  authMiddleware,
-  uploadSheet.array('files', 20),
-  sheetController.createSheet,
-);
+router.post("/", sheetController.createSheet);
 router.put("/:id", authMiddleware, sheetController.updateSheet);
 router.delete("/:id", authMiddleware, sheetController.deleteSheet);
 router.post("/:id/like", authMiddleware, sheetController.toggleLike);

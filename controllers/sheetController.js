@@ -6,89 +6,30 @@ const User = require("../models/User");
 const cloudinary = require("../config/cloudinary");
 const { Readable } = require("stream");
 
-// [POST] TẠO NHẠC PHỔ MỚI (Upload song song nhiều ảnh cùng lúc)
+// [POST] TẠO NHẠC PHỔ MỚI (Xử lý PDF thành mảng ảnh qua Cloudinary)
+// [POST] TẠO NHẠC PHỔ MỚI (Dùng sức mạnh đếm trang tích hợp sẵn của Cloudinary)
+// [POST] TẠO NHẠC PHỔ MỚI (Nhận sẵn mảng link ảnh từ Frontend)
 exports.createSheet = async (req, res) => {
   try {
-    // Kiểm tra mảng req.files thay vì req.file đơn lẻ
-    if (!req.files || req.files.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "Vui lòng đính kèm ít nhất 1 ảnh nhạc phổ!" });
+    const { title, composer, instrument_tags, tempo, genre, time_signature, file_urls } = req.body;
+
+    if (!file_urls || file_urls.length === 0) {
+      return res.status(400).json({ message: "Không nhận được link ảnh nhạc phổ!" });
     }
 
-    const { title, composer, instrument_tags, tempo, genre, time_signature } =
-      req.body;
-
-    console.log("📦 THÔNG TIN FILE NHẬN ĐƯỢC:");
-    console.log(`- Số lượng ảnh: ${req.files.length}`);
-
-    // Hàm upload 1 file buffer lên Cloudinary
-    const uploadToCloudinary = (buffer) => {
-      return new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          {
-            folder: "jamsheet_sheets",
-            resource_type: "image", // Chắc chắn là image
-          },
-          (error, result) => {
-            if (error) {
-              console.error(
-                "🔥 [LỖI TỪ CLOUDINARY]:",
-                JSON.stringify(error, null, 2),
-              );
-              return reject(error);
-            }
-            resolve(result);
-          },
-        );
-
-        uploadStream.on("error", (streamErr) => {
-          console.error(
-            "💥 [LỖI STREAM NETWORK]: Đường truyền bị ngắt!",
-            streamErr,
-          );
-          reject(streamErr);
-        });
-
-        const readableStream = Readable.from([buffer]);
-
-        readableStream.on("error", (readErr) => {
-          console.error(
-            "🚨 [LỖI ĐỌC BUFFER RAM]: Không thể đọc file!",
-            readErr,
-          );
-          reject(readErr);
-        });
-
-        readableStream.pipe(uploadStream);
-      });
-    };
-
-    // 1. Upload song song tất cả các ảnh dùng Promise.all
-    const uploadPromises = req.files.map((file) =>
-      uploadToCloudinary(file.buffer),
-    );
-    const cloudResults = await Promise.all(uploadPromises);
-
-    // 2. Trích xuất mảng chứa tất cả các link ảnh vừa upload xong
-    const file_urls = cloudResults.map((result) => result.secure_url);
-
-    // 3. Lưu vào Database
+    // Không cần xử lý Cloudinary SDK ở đây nữa
     const newSheet = new SheetMusic({
       title,
       composer,
       instrument_tags: instrument_tags
-        ? instrument_tags
-            .split(",")
-            .map((t) => t.trim())
-            .filter(Boolean)
+        ? instrument_tags.split(",").map((t) => t.trim()).filter(Boolean)
         : [],
       tempo: Number(tempo),
       genre,
       time_signature,
       uploader_id: req.user.userId,
-      file_url: file_urls[0], // Lấy ảnh đầu tiên làm ảnh bìa thumbnail
-      file_urls: file_urls, // Lưu nguyên mảng ảnh vào
+      file_url: file_urls[0], // Lấy ảnh đầu tiên làm ảnh bìa
+      file_urls: file_urls,   // Lưu nguyên mảng ảnh
     });
 
     await newSheet.save();
@@ -96,11 +37,9 @@ exports.createSheet = async (req, res) => {
     const responseData = newSheet.toObject();
     responseData.file_urls = responseData.file_urls || [];
 
-    res
-      .status(201)
-      .json({ message: "Tải lên thành công!", sheet: responseData });
+    res.status(201).json({ message: "Tạo nhạc phổ thành công!", sheet: responseData });
   } catch (error) {
-    console.error("Lỗi xử lý ảnh nhạc phổ:", error);
+    console.error("Lỗi tạo nhạc phổ:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };
@@ -113,6 +52,7 @@ exports.getMySheets = async (req, res) => {
       is_frozen: { $ne: true },
     }).sort({ createdAt: -1 });
 
+    // Đảm bảo file_urls luôn là array
     const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
@@ -134,6 +74,7 @@ exports.getExploreSheets = async (req, res) => {
       .sort({ likes_count: -1 })
       .limit(20);
 
+    // Đảm bảo file_urls luôn là array
     const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
@@ -184,6 +125,7 @@ exports.updateSheet = async (req, res) => {
         .json({ message: "Không tìm thấy nhạc phổ hoặc không có quyền!" });
     }
 
+    // Đồng bộ thông tin sang các phòng Jam liên quan
     await JamProject.updateMany(
       { sheet_music_id: id },
       {
@@ -206,7 +148,7 @@ exports.updateSheet = async (req, res) => {
   }
 };
 
-// [DELETE] XÓA NHẠC PHỔ
+// [DELETE] XÓA NHẠC PHỔ (Xóa cứng hoặc Đóng băng)
 exports.deleteSheet = async (req, res) => {
   try {
     const sheetId = req.params.id;
@@ -256,6 +198,7 @@ exports.searchSheets = async (req, res) => {
 
     const sheets = await SheetMusic.find(filter).sort({ createdAt: -1 });
 
+    // Đảm bảo file_urls luôn là array
     const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
