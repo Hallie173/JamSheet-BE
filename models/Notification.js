@@ -2,7 +2,8 @@ const mongoose = require("mongoose");
 
 const notificationSchema = new mongoose.Schema({
   recipient_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  sender_name: { type: String }, // Tên người kích hoạt thông báo (VD: UserA)
+  sender_id: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // ID người kích hoạt
+  sender_name: { type: String }, // Tên người kích hoạt thông báo
   sender_avatar: { type: String },
   type: { 
     type: String, 
