@@ -6,8 +6,6 @@ const User = require("../models/User");
 const cloudinary = require("../config/cloudinary");
 const { Readable } = require("stream");
 
-// [POST] TẠO NHẠC PHỔ MỚI (Xử lý PDF thành mảng ảnh qua Cloudinary)
-// [POST] TẠO NHẠC PHỔ MỚI (Dùng sức mạnh đếm trang tích hợp sẵn của Cloudinary)
 // [POST] TẠO NHẠC PHỔ MỚI (Nhận sẵn mảng link ảnh từ Frontend)
 exports.createSheet = async (req, res) => {
   try {
@@ -27,7 +25,6 @@ exports.createSheet = async (req, res) => {
         .json({ message: "Không nhận được link ảnh nhạc phổ!" });
     }
 
-    // Không cần xử lý Cloudinary SDK ở đây nữa
     const newSheet = new SheetMusic({
       title,
       composer,
@@ -41,8 +38,8 @@ exports.createSheet = async (req, res) => {
       genre,
       time_signature,
       uploader_id: req.user.userId,
-      file_url: file_urls[0], // Lấy ảnh đầu tiên làm ảnh bìa
-      file_urls: file_urls, // Lưu nguyên mảng ảnh
+      file_url: file_urls[0],
+      file_urls: file_urls,
     });
 
     await newSheet.save();
@@ -67,7 +64,6 @@ exports.getMySheets = async (req, res) => {
       is_frozen: { $ne: true },
     }).sort({ createdAt: -1 });
 
-    // Đảm bảo file_urls luôn là array
     const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
@@ -89,7 +85,6 @@ exports.getExploreSheets = async (req, res) => {
       .sort({ likes_count: -1, createdAt: -1 })
       .limit(20);
 
-    // Đảm bảo file_urls luôn là array
     const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
@@ -192,6 +187,37 @@ exports.deleteSheet = async (req, res) => {
         { sheet_music_id: sheetId },
         { status: "archived" },
       );
+
+      // Gửi notification cho những user có bản nháp trong các phòng bị frozen
+      try {
+        const orphanedDrafts = await AudioTrack.find({
+          project_id: { $in: roomIds },
+          status: "draft",
+        }).select("user_id");
+
+        const affectedUserIds = [
+          ...new Set(
+            orphanedDrafts
+              .map((d) => d.user_id.toString())
+              .filter((uid) => uid !== userId)
+          ),
+        ];
+
+        for (const affectedUserId of affectedUserIds) {
+          await Notification.create({
+            recipient_id: affectedUserId,
+            sender_id: userId,
+            sender_name: "Hệ thống",
+            type: "orphaned_draft",
+            target_id: sheetId,
+            target_name: sheet.title,
+            target_link: "/my-records",
+          });
+        }
+      } catch (notifErr) {
+        console.error("Lỗi khi gửi notification orphaned_draft:", notifErr);
+      }
+
       res
         .status(200)
         .json({ message: "Đã đóng băng nhạc phổ!", action: "freeze" });
@@ -213,7 +239,6 @@ exports.searchSheets = async (req, res) => {
 
     const sheets = await SheetMusic.find(filter).sort({ createdAt: -1 });
 
-    // Đảm bảo file_urls luôn là array
     const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
       sheetObj.file_urls = sheetObj.file_urls || [];
@@ -244,11 +269,9 @@ exports.toggleLike = async (req, res) => {
 
     if (hasLiked) {
       sheet.liked_by.pull(userId);
-      // Giảm count đi 1 (đảm bảo không bị âm)
       sheet.likes_count = Math.max(0, (sheet.likes_count || 0) - 1);
     } else {
       sheet.liked_by.push(userId);
-      // Tăng count lên 1
       sheet.likes_count = (sheet.likes_count || 0) + 1;
 
       if (sheet.uploader_id.toString() !== userId) {
@@ -280,7 +303,6 @@ exports.getSheetById = async (req, res) => {
   try {
     const sheet = await SheetMusic.findById(req.params.id);
 
-    // Trả 404 nếu không tồn tại hoặc đã bị frozen
     if (!sheet || sheet.is_frozen) {
       return res
         .status(404)

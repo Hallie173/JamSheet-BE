@@ -612,6 +612,40 @@ exports.getRecentDrafts = async (req, res) => {
   }
 };
 
+// [GET] CÁC BẢN NHÁP MỒ CÔI (thuộc phòng đã bị frozen/archived)
+exports.getOrphanedDrafts = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const drafts = await AudioTrack.find({ user_id: userId, status: "draft" })
+      .populate("project_id", "title status")
+      .sort({ createdAt: -1 });
+
+    // Chỉ lấy bản nháp thuộc phòng đã bị archived (frozen)
+    const orphaned = drafts.filter(
+      (d) => d.project_id != null && d.project_id.status === "archived"
+    );
+
+    const formatted = orphaned.map((d) => ({
+      _id: d._id,
+      name: d.name,
+      instrument: d.instrument,
+      duration: d.duration,
+      raw_audio_url: d.raw_audio_url,
+      sync_offset_ms: d.sync_offset_ms,
+      project_id: d.project_id._id,
+      project_title: d.project_id.title || "Phòng Jam không xác định",
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt,
+    }));
+
+    res.status(200).json(formatted);
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách bản nháp mồ côi:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
 exports.getTrendingJams = async (req, res) => {
   try {
     const allJams = await JamProject.find().populate("owner_id", "name");

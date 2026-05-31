@@ -7,7 +7,7 @@ const notificationSchema = new mongoose.Schema({
   sender_avatar: { type: String },
   type: { 
     type: String, 
-    enum: ["sheet_like", "room_new_track_owner", "room_new_track_participant", "track_likes"], 
+    enum: ["sheet_like", "room_new_track_owner", "room_new_track_participant", "track_likes", "orphaned_draft"], 
     required: true 
   },
   target_id: { type: mongoose.Schema.Types.ObjectId, required: true }, // ID của sheet hoặc room hoặc track
