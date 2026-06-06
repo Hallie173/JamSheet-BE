@@ -62,7 +62,9 @@ exports.getMySheets = async (req, res) => {
     const sheets = await SheetMusic.find({
       uploader_id: req.user.userId,
       is_frozen: { $ne: true },
-    }).sort({ createdAt: -1 });
+    })
+      .populate("uploader_id", "username")
+      .sort({ createdAt: -1 });
 
     const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
@@ -82,6 +84,7 @@ exports.getMySheets = async (req, res) => {
 exports.getExploreSheets = async (req, res) => {
   try {
     const sheets = await SheetMusic.find({ is_frozen: { $ne: true } })
+      .populate("uploader_id", "username")
       .sort({ likes_count: -1, createdAt: -1 })
       .limit(20);
 
@@ -237,7 +240,9 @@ exports.searchSheets = async (req, res) => {
     if (inst) filter.instrument_tags = { $in: inst.split(",") };
     if (genre) filter.genre = { $in: genre.split(",") };
 
-    const sheets = await SheetMusic.find(filter).sort({ createdAt: -1 });
+    const sheets = await SheetMusic.find(filter)
+      .populate("uploader_id", "username")
+      .sort({ createdAt: -1 });
 
     const safeSheets = sheets.map((sheet) => {
       const sheetObj = sheet.toObject();
@@ -301,7 +306,7 @@ exports.toggleLike = async (req, res) => {
 // [GET] LẤY THÔNG TIN NHẠC PHỔ THEO ID (dùng cho notification redirect)
 exports.getSheetById = async (req, res) => {
   try {
-    const sheet = await SheetMusic.findById(req.params.id);
+    const sheet = await SheetMusic.findById(req.params.id).populate("uploader_id", "username");
 
     if (!sheet || sheet.is_frozen) {
       return res
