@@ -6,27 +6,33 @@ require("dotenv").config();
 
 const app = express();
 
-// Middleware (Xử lý dữ liệu trung gian)
+// ==========================================
+// MIDDLEWARE (phải đứng trước tất cả routes)
+// ==========================================
 app.use(cors()); // Cho phép Frontend gọi API
 app.use(express.json()); // Cho phép Backend đọc được dữ liệu JSON gửi lên
 app.use("/uploads", express.static(path.join(__dirname, "uploads"))); // Cho phép truy cập file tĩnh trong thư mục uploads
-app.use("/api/sheets", require("./routes/sheetRoutes")); // Đăng ký route cho nhạc phổ
-app.use("/api/notifications", require("./routes/notiRoutes")); // Đăng ký route cho thông báo
 
-// Kết nối MongoDB bằng Mongoose
+// ==========================================
+// KẾT NỐI MONGODB
+// ==========================================
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ Đã kết nối thành công với MongoDB JamSheet!"))
   .catch((err) => console.error("❌ Lỗi kết nối MongoDB:", err));
 
-const authRoutes = require("./routes/authRoutes");
-app.use("/api/auth", authRoutes);
+// ==========================================
+// ROUTES (đăng ký mỗi route đúng một lần)
+// ==========================================
+app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/users", require("./routes/userRoutes"));
 app.use("/api/sheets", require("./routes/sheetRoutes"));
 app.use("/api/jams", require("./routes/jamRoutes"));
 app.use("/api/notifications", require("./routes/notiRoutes"));
 
-// Khởi động Server
+// ==========================================
+// KHỞI ĐỘNG SERVER
+// ==========================================
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server Backend đang chạy tại http://localhost:${PORT}`);
