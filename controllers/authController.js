@@ -27,6 +27,13 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Lỗi dữ liệu",
+        error: "Vui lòng cung cấp đầy đủ email và mật khẩu."
+      });
+    }
+
     const user = await User.findOne({ email });
     if (!user) {
       return res
@@ -73,6 +80,7 @@ exports.forgotPassword = async (req, res) => {
     const resetToken = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
       expiresIn: "15m",
     });
+    console.log("=== TOKEN TEST ===: ", resetToken);
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -108,34 +116,47 @@ exports.forgotPassword = async (req, res) => {
 
 exports.resetPassword = async (req, res) => {
   try {
-    const { token } = req.params;
-    const { newPassword } = req.body;
+    // Sử dụng Fallback (|| {}) để đảm bảo không bao giờ destructure từ undefined
+    const { token } = req.params || {};
+    const { newPassword } = req.body || {};
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // 1. Kiểm tra đầu vào
+    if (!token || !newPassword) {
+      return res.status(400).json({ 
+        message: "Thiếu dữ liệu", 
+        error: "Vui lòng cung cấp đầy đủ token và mật khẩu mới." 
+      });
+    }
+
+    // 2. Xác thực token
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      if (error.name === "TokenExpiredError") {
+        return res.status(400).json({ message: "Đường dẫn đã hết hạn." });
+      }
+      return res.status(400).json({ message: "Token không hợp lệ." });
+    }
+
+    // 3. Tìm user và kiểm tra sự tồn tại
     const user = await User.findById(decoded.userId);
     if (!user) {
       return res.status(400).json({ message: "Người dùng không tồn tại!" });
     }
 
+    // 4. Mã hóa mật khẩu mới
     const salt = await bcrypt.genSalt(10);
     user.password_hash = await bcrypt.hash(newPassword, salt);
+    
+    // Cập nhật và lưu lại
     await user.save();
-    res
-      .status(200)
-      .json({
-        message:
-          "Đặt lại mật khẩu thành công! Bạn có thể đăng nhập bằng mật khẩu mới.",
-      });
+
+    return res.status(200).json({
+      message: "Đặt lại mật khẩu thành công! Bạn có thể đăng nhập bằng mật khẩu mới.",
+    });
   } catch (error) {
-    if (error.name === "TokenExpiredError") {
-      return res
-        .status(400)
-        .json({
-          message: "Đường dẫn khôi phục đã hết hạn. Vui lòng gửi lại yêu cầu.",
-        });
-    }
-    res
-      .status(500)
-      .json({ message: "Lỗi xác thực token", error: error.message });
+    console.error("Reset Password Error:", error);
+    return res.status(500).json({ message: "Lỗi hệ thống", error: error.message });
   }
 };
