@@ -363,7 +363,7 @@ exports.uploadAudioTrack = async (req, res) => {
 exports.getMyTracks = async (req, res) => {
   try {
     const tracks = await AudioTrack.find({ user_id: req.user.userId })
-      .populate("project_id", "title")
+      .populate("project_id", "title status") // Thêm "status" để frontend phân biệt phòng archived
       .sort({ createdAt: -1 });
     res.status(200).json(tracks);
   } catch (error) {
