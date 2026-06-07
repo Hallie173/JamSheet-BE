@@ -80,7 +80,6 @@ exports.forgotPassword = async (req, res) => {
     const resetToken = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
       expiresIn: "15m",
     });
-    console.log("=== TOKEN TEST ===: ", resetToken);
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
