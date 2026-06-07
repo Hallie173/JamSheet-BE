@@ -804,3 +804,114 @@ exports.getJamsNeedingUser = async (req, res) => {
     res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };
+
+// [GET] XEM PHÒNG JAM CÔNG KHAI (Không cần đăng nhập - dành cho khách)
+exports.getJamRoomPublic = async (req, res) => {
+  try {
+    const projectId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({ message: "ID phòng Jam không hợp lệ!" });
+    }
+
+    const project = await JamProject.findById(projectId).populate("sheet_music_id", "file_url file_urls");
+    if (!project) {
+      return res.status(404).json({ message: "Không tìm thấy phòng Jam này!" });
+    }
+
+    const publishedTracks = await AudioTrack.find({
+      project_id: projectId,
+      status: "published",
+    }).select("_id name raw_audio_url instrument sync_offset_ms liked_by");
+
+    const recordsByInstrument = {};
+    publishedTracks.forEach((t) => {
+      if (!recordsByInstrument[t.instrument]) {
+        recordsByInstrument[t.instrument] = [];
+      }
+      recordsByInstrument[t.instrument].push({
+        id: t._id.toString(),
+        name: t.name,
+        audioUrl: t.raw_audio_url,
+        syncOffset: t.sync_offset_ms || 0,
+        liked_by: t.liked_by ? t.liked_by.map((id) => id.toString()) : [],
+      });
+    });
+
+    let frontendTracks = [];
+    const colorPalette = [
+      "#3b82f6",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#8b5cf6",
+    ];
+
+    if (project.tracks_config && project.tracks_config.length > 0) {
+      frontendTracks = project.tracks_config.map((tc, index) => ({
+        id: tc._id || `track_${index}`,
+        instrument: tc.instrument,
+        user: "Thành viên",
+        avatar: "",
+        waveColor: colorPalette[index % colorPalette.length],
+        volume: tc.volume || 80,
+        activeRecordId: tc.active_record_id
+          ? tc.active_record_id.toString()
+          : null,
+        records: recordsByInstrument[tc.instrument] || [],
+      }));
+    } else if (
+      project.required_instruments &&
+      project.required_instruments.length > 0
+    ) {
+      frontendTracks = project.required_instruments.map((inst, index) => ({
+        id: `empty_track_${index}`,
+        instrument: inst,
+        user: "Đang tuyển...",
+        avatar: "",
+        waveColor: colorPalette[index % colorPalette.length],
+        volume: 80,
+        activeRecordId: null,
+        records: recordsByInstrument[inst] || [],
+      }));
+    }
+
+    const roomData = {
+      id: project._id,
+      title: project.title,
+      tempo: project.tempo,
+      timeSignature: project.time_signature,
+      status: project.status,
+      sheetUrl: project.sheet_music_id ? project.sheet_music_id.file_url : null,
+      sheetUrls: project.sheet_music_id ? project.sheet_music_id.file_urls : [],
+      tracks: frontendTracks,
+    };
+
+    res.status(200).json(roomData);
+  } catch (error) {
+    console.error("Lỗi lấy thông tin phòng Jam công khai:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};
+
+// [GET] THỐNG KÊ CỘNG ĐỒNG (Không cần đăng nhập - dành cho trang chủ)
+exports.getCommunityStats = async (req, res) => {
+  try {
+    const User = require("../models/User");
+
+    const [totalUsers, totalTracks, totalRooms] = await Promise.all([
+      User.countDocuments(),
+      AudioTrack.countDocuments({ status: "published" }),
+      JamProject.countDocuments(),
+    ]);
+
+    res.status(200).json({
+      totalMusicians: totalUsers,
+      totalRecords: totalTracks,
+      totalRooms: totalRooms,
+    });
+  } catch (error) {
+    console.error("Lỗi lấy thống kê cộng đồng:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
+  }
+};

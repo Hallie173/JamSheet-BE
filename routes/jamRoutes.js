@@ -15,6 +15,10 @@ router.get("/recent-drafts", authMiddleware, jamController.getRecentDrafts);
 
 router.get("/trending", jamController.getTrendingJams);
 
+router.get("/stats", jamController.getCommunityStats);
+
+router.get("/:id/public", jamController.getJamRoomPublic);
+
 router.get("/needs-you", authMiddleware, jamController.getJamsNeedingUser);
 
 router.get("/orphaned-drafts", authMiddleware, jamController.getOrphanedDrafts);
