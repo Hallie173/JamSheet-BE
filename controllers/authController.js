@@ -85,10 +85,13 @@ exports.forgotPassword = async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
 
+    // ✅ MỚI — dùng port 587 + TLS, force IPv4, hoạt động tốt trên Render
     const transporter = nodemailer.createTransport({
       host: "smtp.gmail.com",
-      port: 465,
-      secure: true, // SSL — bắt buộc cho port 465, tránh lỗi trên server production
+      port: 587,
+      secure: false,       // TLS thay vì SSL
+      requireTLS: true,    // Bắt buộc upgrade lên TLS
+      family: 4,           // ← Force IPv4, tránh ENETUNREACH IPv6
       auth: {
         user: process.env.MAIL_USER,
         pass: process.env.MAIL_PASS,
@@ -126,9 +129,9 @@ exports.resetPassword = async (req, res) => {
 
     // 1. Kiểm tra đầu vào
     if (!token || !newPassword) {
-      return res.status(400).json({ 
-        message: "Thiếu dữ liệu", 
-        error: "Vui lòng cung cấp đầy đủ token và mật khẩu mới." 
+      return res.status(400).json({
+        message: "Thiếu dữ liệu",
+        error: "Vui lòng cung cấp đầy đủ token và mật khẩu mới."
       });
     }
 
@@ -152,7 +155,7 @@ exports.resetPassword = async (req, res) => {
     // 4. Mã hóa mật khẩu mới
     const salt = await bcrypt.genSalt(10);
     user.password_hash = await bcrypt.hash(newPassword, salt);
-    
+
     // Cập nhật và lưu lại
     await user.save();
 
