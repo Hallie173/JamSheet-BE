@@ -81,18 +81,22 @@ exports.forgotPassword = async (req, res) => {
       expiresIn: "15m",
     });
 
+    // Dùng biến môi trường FRONTEND_URL để hoạt động đúng cả local lẫn production
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
+
     const transporter = nodemailer.createTransport({
-      service: "gmail",
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true, // SSL — bắt buộc cho port 465, tránh lỗi trên server production
       auth: {
         user: process.env.MAIL_USER,
         pass: process.env.MAIL_PASS,
       },
     });
 
-    const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
-
     const mailOptions = {
-      from: process.env.MAIL_USER,
+      from: `"JamSheet" <${process.env.MAIL_USER}>`,
       to: user.email,
       subject: "[JamSheet] Yêu cầu đặt lại mật khẩu",
       html: `
@@ -109,6 +113,7 @@ exports.forgotPassword = async (req, res) => {
       message: "Email khôi phục đã được gửi. Vui lòng kiểm tra hộp thư.",
     });
   } catch (error) {
+    console.error("Lỗi gửi email:", error);
     res.status(500).json({ message: "Lỗi gửi email", error: error.message });
   }
 };
