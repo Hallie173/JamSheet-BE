@@ -85,13 +85,18 @@ exports.forgotPassword = async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
 
-    // ✅ MỚI — dùng port 587 + TLS, force IPv4, hoạt động tốt trên Render
+    const dns = require("dns");
     const transporter = nodemailer.createTransport({
       host: "smtp.gmail.com",
-      port: 587,
-      secure: false,       // TLS thay vì SSL
-      requireTLS: true,    // Bắt buộc upgrade lên TLS
-      family: 4,           // ← Force IPv4, tránh ENETUNREACH IPv6
+      port: 465,
+      secure: true,
+      family: 4,
+      dnsLookup: (hostname, options, callback) => {
+        dns.lookup(hostname, { family: 4, ...options }, callback);
+      },
+      tls: {
+        rejectUnauthorized: false
+      },
       auth: {
         user: process.env.MAIL_USER,
         pass: process.env.MAIL_PASS,
